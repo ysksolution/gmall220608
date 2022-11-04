@@ -4,6 +4,9 @@ import com.alibaba.fastjson.JSON;
 import com.alibaba.fastjson.JSONObject;
 import com.atguigu.gmall.realtime.app.BaseAppV1;
 import com.atguigu.gmall.realtime.common.Constant;
+import com.ververica.cdc.connectors.mysql.source.MySqlSource;
+import com.ververica.cdc.debezium.JsonDebeziumDeserializationSchema;
+import org.apache.flink.api.common.eventtime.WatermarkStrategy;
 import org.apache.flink.api.common.functions.FilterFunction;
 import org.apache.flink.streaming.api.datastream.DataStreamSource;
 import org.apache.flink.streaming.api.datastream.SingleOutputStreamOperator;
@@ -30,8 +33,10 @@ public class DimApp extends BaseAppV1 {
         // 这里完成你业务逻辑
         
         // 1. 对流中的做数据清洗 etl
-        SingleOutputStreamOperator<String> etledStream = etl(stream);
-        etledStream.print();
+        SingleOutputStreamOperator<JSONObject> etledStream = etl(stream);
+        // 2. 读取配置表的数据
+        readTableProcess(env);
+        
     
         // 2. 现在数据既有事实表又维度表, 我们只要维度表的数据: 过滤出需要的所有维度表数据
         // 使用动态的方式过滤出想要的维度
@@ -40,7 +45,21 @@ public class DimApp extends BaseAppV1 {
         
     }
     
-    private SingleOutputStreamOperator<String> etl(DataStreamSource<String> stream) {
+    private void readTableProcess(StreamExecutionEnvironment env) {
+        MySqlSource<String> mySqlSource = MySqlSource.<String>builder()
+            .hostname("hadoop162")
+            .port(3306)
+            .databaseList("gmall_config") // set captured database, If you need to synchronize the whole database, Please set tableList to ".*".
+            .tableList("gmall_config.table_process") // set captured table
+            .username("root")
+            .password("aaaaaa")
+            .deserializer(new JsonDebeziumDeserializationSchema()) // converts SourceRecord to JSON String
+            .build();
+        DataStreamSource<String> stream = env.fromSource(mySqlSource, WatermarkStrategy.noWatermarks(), "mysql-cdc");
+        stream.print();
+    }
+    
+    private SingleOutputStreamOperator<JSONObject> etl(DataStreamSource<String> stream) {
        return stream
             .filter(new FilterFunction<String>() {
                 @Override
@@ -50,7 +69,8 @@ public class DimApp extends BaseAppV1 {
                     2. 库是 gmall2022
                      */
                     try {
-                        JSONObject obj = JSON.parseObject(value);
+                        JSONObject obj = JSON.parseObject(value.replaceAll("bootstrap-", ""));
+                        
                         String type = obj.getString("type");
                         String data = obj.getString("data");
     
@@ -65,7 +85,8 @@ public class DimApp extends BaseAppV1 {
                         return false;
                     }
                 }
-            });
+            })
+           .map(json -> JSON.parseObject(json.replaceAll("bootstrap-", "")));
     }
 }
 /*
@@ -78,6 +99,19 @@ flink 程序可以不用做任何的变动, 实时对配置的变化进程处理
 
 找一个位置存储配置信息:
     mysql 中
+    
+----
+cdc:
+   op:
+      r  启动的时候, 读取的快照  before=null  after 有
+      u  更新字段 before 有 after 有
+      d  删除字段  before 有 after=null
+      c  创建数据  before=null  after 有
+      
+      更新的主键:
+      先 d 后 c
+      
+      
 
  */
 
