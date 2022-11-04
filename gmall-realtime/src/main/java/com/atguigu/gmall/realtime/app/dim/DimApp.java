@@ -3,6 +3,7 @@ package com.atguigu.gmall.realtime.app.dim;
 import com.alibaba.fastjson.JSON;
 import com.alibaba.fastjson.JSONObject;
 import com.atguigu.gmall.realtime.app.BaseAppV1;
+import com.atguigu.gmall.realtime.bean.TableProcess;
 import com.atguigu.gmall.realtime.common.Constant;
 import com.ververica.cdc.connectors.mysql.source.MySqlSource;
 import com.ververica.cdc.debezium.JsonDebeziumDeserializationSchema;
@@ -27,6 +28,7 @@ public class DimApp extends BaseAppV1 {
         );
         
     }
+    
     @Override
     public void handle(StreamExecutionEnvironment env,
                        DataStreamSource<String> stream) {
@@ -35,9 +37,9 @@ public class DimApp extends BaseAppV1 {
         // 1. 对流中的做数据清洗 etl
         SingleOutputStreamOperator<JSONObject> etledStream = etl(stream);
         // 2. 读取配置表的数据
-        readTableProcess(env);
+        SingleOutputStreamOperator<TableProcess> tpStream = readTableProcess(env);
+        tpStream.print();
         
-    
         // 2. 现在数据既有事实表又维度表, 我们只要维度表的数据: 过滤出需要的所有维度表数据
         // 使用动态的方式过滤出想要的维度
         
@@ -45,7 +47,7 @@ public class DimApp extends BaseAppV1 {
         
     }
     
-    private void readTableProcess(StreamExecutionEnvironment env) {
+    private SingleOutputStreamOperator<TableProcess> readTableProcess(StreamExecutionEnvironment env) {
         MySqlSource<String> mySqlSource = MySqlSource.<String>builder()
             .hostname("hadoop162")
             .port(3306)
@@ -55,12 +57,25 @@ public class DimApp extends BaseAppV1 {
             .password("aaaaaa")
             .deserializer(new JsonDebeziumDeserializationSchema()) // converts SourceRecord to JSON String
             .build();
-        DataStreamSource<String> stream = env.fromSource(mySqlSource, WatermarkStrategy.noWatermarks(), "mysql-cdc");
-        stream.print();
+      return  env
+            .fromSource(mySqlSource, WatermarkStrategy.noWatermarks(), "mysql-cdc")
+            .map(json -> {
+                JSONObject obj = JSON.parseObject(json);
+                String op = obj.getString("op");
+                String beforeOrAfter = "after";
+                if ("d".equals(op)) {
+                    beforeOrAfter = "before";
+                }
+                TableProcess tp = obj.getObject(beforeOrAfter, TableProcess.class);
+                tp.setOp(op);
+                return tp;
+            });
+        
+        
     }
     
     private SingleOutputStreamOperator<JSONObject> etl(DataStreamSource<String> stream) {
-       return stream
+        return stream
             .filter(new FilterFunction<String>() {
                 @Override
                 public boolean filter(String value) throws Exception {
@@ -73,7 +88,7 @@ public class DimApp extends BaseAppV1 {
                         
                         String type = obj.getString("type");
                         String data = obj.getString("data");
-    
+                        
                         return "gmall2022".equals(obj.getString("database"))
                             && obj.getString("table") != null
                             && ("insert".equals(type) || "update".equals(type))
@@ -86,7 +101,7 @@ public class DimApp extends BaseAppV1 {
                     }
                 }
             })
-           .map(json -> JSON.parseObject(json.replaceAll("bootstrap-", "")));
+            .map(json -> JSON.parseObject(json.replaceAll("bootstrap-", "")));
     }
 }
 /*
