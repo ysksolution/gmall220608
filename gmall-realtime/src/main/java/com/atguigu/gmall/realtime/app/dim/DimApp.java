@@ -1,52 +1,95 @@
 package com.atguigu.gmall.realtime.app.dim;
 
-import com.atguigu.gmall.realtime.util.FlinkSourceUtil;
-import org.apache.flink.configuration.Configuration;
-import org.apache.flink.runtime.state.hashmap.HashMapStateBackend;
-import org.apache.flink.streaming.api.CheckpointingMode;
+import com.alibaba.fastjson.JSON;
+import com.alibaba.fastjson.JSONObject;
+import com.atguigu.gmall.realtime.app.BaseAppV1;
+import com.atguigu.gmall.realtime.common.Constant;
+import org.apache.flink.api.common.functions.FilterFunction;
 import org.apache.flink.streaming.api.datastream.DataStreamSource;
-import org.apache.flink.streaming.api.environment.CheckpointConfig;
+import org.apache.flink.streaming.api.datastream.SingleOutputStreamOperator;
 import org.apache.flink.streaming.api.environment.StreamExecutionEnvironment;
 
 /**
  * @Author lzc
  * @Date 2022/11/4 11:33
  */
-public class DimApp {
+public class DimApp extends BaseAppV1 {
     public static void main(String[] args) {
-        // 从 kafka 读取topi ods_db 数据
-        Configuration conf = new Configuration();
-        conf.setInteger("rest.port", 2000);
-        StreamExecutionEnvironment env = StreamExecutionEnvironment.getExecutionEnvironment(conf);
-        env.setParallelism(2);
-        
-        // 1. 开启 checkpoint
-        env.enableCheckpointing(3000);
-        // 2. 设置状态后端: 使用状态状态后端
-        env.setStateBackend(new HashMapStateBackend());
-        // 3. 设置 checkpoint 的存储路径
-        env.getCheckpointConfig().setCheckpointStorage("hdfs://hadoop162:8020/gmall2022/DimApp");
-        // 4. 设置 checkpoint 的超时时间
-        env.getCheckpointConfig().setCheckpointTimeout(60 * 1000);
-        // 5. 设置 checkpoint 的模式: 严格一次
-        env.getCheckpointConfig().setCheckpointingMode(CheckpointingMode.EXACTLY_ONCE);
-        // 6. 设置 checkpoint 的并发数,
-        env.getCheckpointConfig().setMaxConcurrentCheckpoints(1);
-        // 7. 设置 checkpoint 之间的时间最小间隔. 如果设置了这个, 则setMaxConcurrentCheckpoints可以省略
-        env.getCheckpointConfig().setMinPauseBetweenCheckpoints(500);
-        // 8. 设置当 job 取消的时候, 是否保留 checkpoint 的数据
-        env.getCheckpointConfig().setExternalizedCheckpointCleanup(CheckpointConfig.ExternalizedCheckpointCleanup.RETAIN_ON_CANCELLATION);
-        
-        // 从 topic 读取数据
-        DataStreamSource<String> stream = env.addSource(FlinkSourceUtil.getKafkaSource("DimApp", "ods_db"));
-        stream.print();
-    
-        try {
-            env.execute();
-        } catch (Exception e) {
-            e.printStackTrace();
-        }
-        
+        // 每个子类要消费的 topic 肯定是不一样的
+        new DimApp().init(
+            2001,
+            2,
+            "DimApp",
+            Constant.TOPIC_ODS_DB
+        );
         
     }
+    @Override
+    public void handle(StreamExecutionEnvironment env,
+                       DataStreamSource<String> stream) {
+        // 这里完成你业务逻辑
+        
+        // 1. 对流中的做数据清洗 etl
+        SingleOutputStreamOperator<String> etledStream = etl(stream);
+        etledStream.print();
+    
+        // 2. 现在数据既有事实表又维度表, 我们只要维度表的数据: 过滤出需要的所有维度表数据
+        // 使用动态的方式过滤出想要的维度
+        
+        // 3. 把不同的数据写出到 phoenix 中的不同的表中
+        
+    }
+    
+    private SingleOutputStreamOperator<String> etl(DataStreamSource<String> stream) {
+       return stream
+            .filter(new FilterFunction<String>() {
+                @Override
+                public boolean filter(String value) throws Exception {
+                    /*
+                    1. 都应该是 json 格式, 格式不对是脏数据
+                    2. 库是 gmall2022
+                     */
+                    try {
+                        JSONObject obj = JSON.parseObject(value);
+                        String type = obj.getString("type");
+                        String data = obj.getString("data");
+    
+                        return "gmall2022".equals(obj.getString("database"))
+                            && obj.getString("table") != null
+                            && ("insert".equals(type) || "update".equals(type))
+                            && data != null
+                            && data.length() > 2;
+                        
+                    } catch (Exception e) {
+                        System.out.println("数据格式有误, 不是 json 数据: " + value);
+                        return false;
+                    }
+                }
+            });
+    }
 }
+/*
+把 需要哪些报错一个配置信息中, flink 能够实时的读取配置信息的变化, 当配置信息变化之后
+flink 程序可以不用做任何的变动, 实时对配置的变化进程处理
+
+广播状态:
+
+把配置信息做成一个广播流, 与数据流进行 connect, 把配置信息放入广播状态, 数据信息读取广播状态
+
+找一个位置存储配置信息:
+    mysql 中
+
+ */
+
+
+
+
+
+
+
+
+
+
+
+
+
