@@ -70,8 +70,6 @@ public class DimApp extends BaseAppV1 {
                 tp.setOp(op);
                 return tp;
             });
-        
-        
     }
     
     private SingleOutputStreamOperator<JSONObject> etl(DataStreamSource<String> stream) {
