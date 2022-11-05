@@ -41,7 +41,7 @@ public class PhoenixSink extends RichSinkFunction<Tuple2<JSONObject, TableProces
 }
 /*
 长连接问题:
-    mysql 当一个连接超过 8 个服务器没有通讯, 则服务器会自动关闭连接.
+    mysql 当一个连接超过 8 小时与服务器没有通讯, 则服务器会自动关闭连接.
 
 解决长链接问题;
     1. 每隔一段时间, 与服务器做一次通讯
