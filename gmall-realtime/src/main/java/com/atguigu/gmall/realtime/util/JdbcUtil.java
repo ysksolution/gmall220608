@@ -5,6 +5,7 @@ import com.atguigu.gmall.realtime.common.Constant;
 import java.sql.Connection;
 import java.sql.DriverManager;
 import java.sql.SQLException;
+import java.util.List;
 
 /**
  * @Author lzc
@@ -36,5 +37,17 @@ public class JdbcUtil {
         } catch (SQLException e) {
             throw new RuntimeException(e);
         }
+    }
+    
+    public static Connection getMySqlConnection() {
+        String driver = Constant.MYSQL_DRIVER;
+        String url = Constant.MYSQL_URL;
+    
+        return getJdbcConnection(driver, url, "root", "aaaaaa");
+    }
+    
+    // 泛型方法
+    public static <T> List<T> queryList(Connection conn, String querySql, Class<T> tClass) {
+        return null;
     }
 }

@@ -3,16 +3,19 @@ package com.atguigu.gmall.realtime.sink;
 import com.alibaba.fastjson.JSONObject;
 import com.atguigu.gmall.realtime.bean.TableProcess;
 import com.atguigu.gmall.realtime.util.DruidDSUtil;
+import lombok.extern.slf4j.Slf4j;
 import org.apache.flink.api.java.tuple.Tuple2;
 import org.apache.flink.configuration.Configuration;
 import org.apache.flink.streaming.api.functions.sink.RichSinkFunction;
 
 import java.sql.Connection;
+import java.sql.PreparedStatement;
 
 /**
  * @Author lzc
  * @Date 2022/11/5 11:35
  */
+@Slf4j
 public class PhoenixSink extends RichSinkFunction<Tuple2<JSONObject, TableProcess>> {
     
     private Connection conn;
@@ -34,9 +37,36 @@ public class PhoenixSink extends RichSinkFunction<Tuple2<JSONObject, TableProces
     
     //流中每来一条数据,则执行一次这个方法
     @Override
-    public void invoke(Tuple2<JSONObject, TableProcess> tp, Context context) throws Exception {
+    public void invoke(Tuple2<JSONObject, TableProcess> t, Context context) throws Exception {
+        JSONObject data = t.f0;
+        TableProcess tp = t.f1;
         // 实现写入业务
         // jdbc: 执行一个插入语句
+        // upsert into user(a,b,c,d)values(?,?,?,?)
+        StringBuilder sql = new StringBuilder();
+        // TODO 拼接 sql
+        sql
+            .append("upsert into ")
+            .append(tp.getSinkTable())
+            .append("(")
+            .append(tp.getSinkColumns())
+            .append(")values(")
+            .append(tp.getSinkColumns().replaceAll("[^,]+", "?"))
+            .append(")");
+        log.warn("插入语句: " + sql.toString());
+        PreparedStatement ps = conn.prepareStatement(sql.toString());
+        // TODO 给占位符进行赋值
+        // 根据列名去 data 中获取数据
+        String[] columns = tp.getSinkColumns().split(",");
+        for (int i = 0; i < columns.length; i++) {
+            String columnName = columns[i];
+            // phoenix 表中的所有字段都是 varchar
+            String v = data.getString(columnName);
+            ps.setString(i + 1, v);
+        }
+        ps.execute();
+        conn.commit();
+        ps.close();
     }
 }
 /*

@@ -29,6 +29,7 @@ import org.apache.flink.util.Collector;
 import java.sql.Connection;
 import java.sql.PreparedStatement;
 import java.util.Arrays;
+import java.util.HashMap;
 import java.util.List;
 
 /**
@@ -83,8 +84,9 @@ public class DimApp extends BaseAppV1 {
         resultStream.addSink(FlinkSinkUtil.getPhoenixSink());
     }
     
-    private SingleOutputStreamOperator<Tuple2<JSONObject, TableProcess>> delNoNeedColumns(SingleOutputStreamOperator<Tuple2<JSONObject, TableProcess>> stream) {
-       return stream.map(new MapFunction<Tuple2<JSONObject, TableProcess>, Tuple2<JSONObject, TableProcess>>() {
+    private SingleOutputStreamOperator<Tuple2<JSONObject, TableProcess>> delNoNeedColumns(
+        SingleOutputStreamOperator<Tuple2<JSONObject, TableProcess>> stream) {
+        return stream.map(new MapFunction<Tuple2<JSONObject, TableProcess>, Tuple2<JSONObject, TableProcess>>() {
             @Override
             public Tuple2<JSONObject, TableProcess> map(Tuple2<JSONObject, TableProcess> tp) throws Exception {
                 JSONObject data = tp.f0;
@@ -96,19 +98,50 @@ public class DimApp extends BaseAppV1 {
         });
     }
     
-    private SingleOutputStreamOperator<Tuple2<JSONObject, TableProcess>> connectStreams(SingleOutputStreamOperator<JSONObject> dataStream,
-                                                                                        SingleOutputStreamOperator<TableProcess> tpStream) {
+    private SingleOutputStreamOperator<Tuple2<JSONObject, TableProcess>> connectStreams(
+        SingleOutputStreamOperator<JSONObject> dataStream,
+        SingleOutputStreamOperator<TableProcess> tpStream) {
         // 广播 key: user_info:ALL
         // 广播 value: TableProcess
         MapStateDescriptor<String, TableProcess> tpStateDesc = new MapStateDescriptor<>("tpState", String.class, TableProcess.class);
         // 1. 把配置流做成广播流
         BroadcastStream<TableProcess> bcStream = tpStream.broadcast(tpStateDesc);
         // 2. 数据流去 connect 广播流
-       return dataStream
+        return dataStream
             .connect(bcStream)
             .process(new BroadcastProcessFunction<JSONObject, TableProcess, Tuple2<JSONObject, TableProcess>>() {
                 
+                private HashMap<String, TableProcess> tpMap;
+                
+                @Override
+                public void open(Configuration parameters) throws Exception {
+                    // 先把所有的配置全部加载进来
+                    // 预加载配置信息
+                    // 放入什么地方?
+                    // 不能放入状态: 因为在 open 状态不能使用
+                    // 放入 HashMap 中
+                    // 获取配置信息的时候, 先从状态中获取, 状态中没有再从 HashMap 中获取
+                    preLoadTableProcess();
+                    
+                }
+                
+                // 对配置进行预加载
+                private void preLoadTableProcess() {
+                    tpMap = new HashMap<>();
+                    Connection conn = JdbcUtil.getMySqlConnection();
+                    // 查询一个表中所有的行的数据
+                    List<TableProcess> tpList = JdbcUtil.queryList(conn, "select * from gmall_config.table_process", TableProcess.class);
+                    
+                    // 把每行数据放入到 map 中
+                    for (TableProcess tp : tpList) {
+                        String key = tp.getSourceTable() + ":" + tp.getSourceType();
+                        tpMap.put(key, tp);
+                    }
+                    
+                }
+                
                 // 4. 当数据信息来的时候, 从广播状态读取配置信息
+                // 如果数据流来的比较早, 配置信息来的比较晚, 则会导致部分数据丢失
                 @Override
                 public void processElement(JSONObject obj,
                                            ReadOnlyContext ctx,
@@ -116,6 +149,10 @@ public class DimApp extends BaseAppV1 {
                     ReadOnlyBroadcastState<String, TableProcess> state = ctx.getBroadcastState(tpStateDesc);
                     String key = obj.getString("table") + ":ALL";
                     TableProcess tp = state.get(key);
+                    if (tp == null) { // 广播状态没有获取对应的配置信息, 去 hashMap 中获取
+                        tp = tpMap.get(key);
+                    }
+                    
                     if (tp != null) {
                         // 把 type 值放入到 data 中, 到后期要用
                         JSONObject data = obj.getJSONObject("data");
@@ -135,6 +172,7 @@ public class DimApp extends BaseAppV1 {
                     String key = tp.getSourceTable() + ":" + tp.getSourceType();
                     if ("d".equals(tp.getOp())) {
                         state.remove(key); // 如果配置信息删除. 删除状态中的数据
+                        tpMap.remove(key);  // 把预加载的配置信息也需要删除
                     } else {
                         
                         state.put(key, tp);
