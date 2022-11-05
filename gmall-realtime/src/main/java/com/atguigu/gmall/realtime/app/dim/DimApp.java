@@ -11,6 +11,7 @@ import com.ververica.cdc.debezium.JsonDebeziumDeserializationSchema;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.flink.api.common.eventtime.WatermarkStrategy;
 import org.apache.flink.api.common.functions.FilterFunction;
+import org.apache.flink.api.common.functions.MapFunction;
 import org.apache.flink.api.common.functions.RichMapFunction;
 import org.apache.flink.api.common.state.BroadcastState;
 import org.apache.flink.api.common.state.MapStateDescriptor;
@@ -26,6 +27,8 @@ import org.apache.flink.util.Collector;
 
 import java.sql.Connection;
 import java.sql.PreparedStatement;
+import java.util.Arrays;
+import java.util.List;
 
 /**
  * @Author lzc
@@ -57,8 +60,12 @@ public class DimApp extends BaseAppV1 {
         tpStream = createTableOnPhoenix(tpStream);
         
         // 4. 数据流和配置做 connect
-        connectStreams(etledStream, tpStream);
+        SingleOutputStreamOperator<Tuple2<JSONObject, TableProcess>> connectedStream = connectStreams(etledStream, tpStream);
+        // 5. 去掉不需要的字段
+        delNoNeedColumns(connectedStream).print();
         
+    
+    
         // 2. 现在数据既有事实表又维度表, 我们只要维度表的数据: 过滤出需要的所有维度表数据
         // 使用动态的方式过滤出想要的维度
         
@@ -66,18 +73,31 @@ public class DimApp extends BaseAppV1 {
         
     }
     
-    private void connectStreams(SingleOutputStreamOperator<JSONObject> dataStream,
-                                SingleOutputStreamOperator<TableProcess> tpStream) {
+    private SingleOutputStreamOperator<Tuple2<JSONObject, TableProcess>> delNoNeedColumns(SingleOutputStreamOperator<Tuple2<JSONObject, TableProcess>> stream) {
+       return stream.map(new MapFunction<Tuple2<JSONObject, TableProcess>, Tuple2<JSONObject, TableProcess>>() {
+            @Override
+            public Tuple2<JSONObject, TableProcess> map(Tuple2<JSONObject, TableProcess> tp) throws Exception {
+                JSONObject data = tp.f0;
+                // data中的 key 在 columns 中存在就保留不存在就删除
+                List<String> columns = Arrays.asList(tp.f1.getSinkColumns().split(","));
+                data.keySet().removeIf(key -> !columns.contains(key) && !"op_type".equals(key));
+                return tp;
+            }
+        });
+    }
+    
+    private SingleOutputStreamOperator<Tuple2<JSONObject, TableProcess>> connectStreams(SingleOutputStreamOperator<JSONObject> dataStream,
+                                                                                        SingleOutputStreamOperator<TableProcess> tpStream) {
         // 广播 key: user_info:ALL
         // 广播 value: TableProcess
         MapStateDescriptor<String, TableProcess> tpStateDesc = new MapStateDescriptor<>("tpState", String.class, TableProcess.class);
         // 1. 把配置流做成广播流
         BroadcastStream<TableProcess> bcStream = tpStream.broadcast(tpStateDesc);
         // 2. 数据流去 connect 广播流
-        dataStream
+       return dataStream
             .connect(bcStream)
             .process(new BroadcastProcessFunction<JSONObject, TableProcess, Tuple2<JSONObject, TableProcess>>() {
-    
+                
                 // 4. 当数据信息来的时候, 从广播状态读取配置信息
                 @Override
                 public void processElement(JSONObject obj,
@@ -87,25 +107,37 @@ public class DimApp extends BaseAppV1 {
                     String key = obj.getString("table") + ":ALL";
                     TableProcess tp = state.get(key);
                     if (tp != null) {
-                        out.collect(Tuple2.of(obj, tp));
+                        // 把 type 值放入到 data 中, 到后期要用
+                        JSONObject data = obj.getJSONObject("data");
+                        data.put("op_type", obj.getString("type"));
+                        out.collect(Tuple2.of(data, tp));
+                        
                     }
                 }
-    
+                
                 // 3. 把配置信息放入到广播状态
                 @Override
                 public void processBroadcastElement(TableProcess tp,
                                                     Context ctx,
                                                     Collector<Tuple2<JSONObject, TableProcess>> out) throws Exception {
+                    System.out.println(tp.getSourceTable());
                     BroadcastState<String, TableProcess> state = ctx.getBroadcastState(tpStateDesc);
                     String key = tp.getSourceTable() + ":" + tp.getSourceType();
-                    state.put(key, tp);
+                    if ("d".equals(tp.getOp())) {
+                        state.remove(key); // 如果配置信息删除. 删除状态中的数据
+                    } else {
+                        
+                        state.put(key, tp);
+                    }
+                    
+                    
+                    // 考虑配置信息的更新和删除
+                    // 0. 新增的时候, 直接状态会新增数据(不用额外操作)
+                    // 1. 当更新的时候, 状态中新数据会覆盖旧数据(不用额外操作)
+                    // 2. 如果配置信息删除. 删除状态中的数据
+                    
                 }
-            })
-            .print();
-        
-        
-        
-        
+            });
         
         
     }
