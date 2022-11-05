@@ -5,18 +5,26 @@ import com.alibaba.fastjson.JSONObject;
 import com.atguigu.gmall.realtime.app.BaseAppV1;
 import com.atguigu.gmall.realtime.bean.TableProcess;
 import com.atguigu.gmall.realtime.common.Constant;
+import com.atguigu.gmall.realtime.util.JdbcUtil;
 import com.ververica.cdc.connectors.mysql.source.MySqlSource;
 import com.ververica.cdc.debezium.JsonDebeziumDeserializationSchema;
+import lombok.extern.slf4j.Slf4j;
 import org.apache.flink.api.common.eventtime.WatermarkStrategy;
 import org.apache.flink.api.common.functions.FilterFunction;
+import org.apache.flink.api.common.functions.RichMapFunction;
+import org.apache.flink.configuration.Configuration;
 import org.apache.flink.streaming.api.datastream.DataStreamSource;
 import org.apache.flink.streaming.api.datastream.SingleOutputStreamOperator;
 import org.apache.flink.streaming.api.environment.StreamExecutionEnvironment;
+
+import java.sql.Connection;
+import java.sql.PreparedStatement;
 
 /**
  * @Author lzc
  * @Date 2022/11/4 11:33
  */
+@Slf4j
 public class DimApp extends BaseAppV1 {
     public static void main(String[] args) {
         // 每个子类要消费的 topic 肯定是不一样的
@@ -38,13 +46,62 @@ public class DimApp extends BaseAppV1 {
         SingleOutputStreamOperator<JSONObject> etledStream = etl(stream);
         // 2. 读取配置表的数据
         SingleOutputStreamOperator<TableProcess> tpStream = readTableProcess(env);
-        tpStream.print();
+        // 3. 在 phoenix 中建表
+        createTableOnPhoenix(tpStream);
+        
         
         // 2. 现在数据既有事实表又维度表, 我们只要维度表的数据: 过滤出需要的所有维度表数据
         // 使用动态的方式过滤出想要的维度
         
         // 3. 把不同的数据写出到 phoenix 中的不同的表中
         
+    }
+    
+    private SingleOutputStreamOperator<TableProcess> createTableOnPhoenix(
+        SingleOutputStreamOperator<TableProcess> tpStream) {
+        return tpStream.map(new RichMapFunction<TableProcess, TableProcess>() {
+            
+            private Connection conn;
+            
+            @Override
+            public void open(Configuration parameters) throws Exception {
+                // 1. 建立到 phoenix 的连接
+                conn = JdbcUtil.getPhoenixConnection();
+                
+            }
+            
+            @Override
+            public void close() throws Exception {
+                if (conn != null) {
+                    conn.close();
+                }
+            }
+            
+            @Override
+            public TableProcess map(TableProcess tp) throws Exception {
+                // 根据每条配置信息,在 Phoenix 中建表
+                
+                // create table user(id varchar, age varchar, sex varchar, constraint pk primary key(id));
+                StringBuilder sql = new StringBuilder();
+                sql
+                    .append("create table ")
+                    .append(tp.getSinkTable())
+                    .append("(")
+                    .append(tp.getSinkColumns().replaceAll("[^,]+","$0 varchar"))
+                    .append(", constraint pk primary key(")
+                    .append(tp.getSinkPk() == null ? "id": tp.getSinkPk())
+                    .append("))");
+                
+                log.warn(sql.toString());
+                // 2. 获取一个预处理语句
+                PreparedStatement ps = conn.prepareStatement(sql.toString());
+                // 3. 执行建表语句
+                ps.execute();
+                // 4. 关闭资源(预处理语句和连接对象)
+                ps.close();
+                return tp;
+            }
+        });
     }
     
     private SingleOutputStreamOperator<TableProcess> readTableProcess(StreamExecutionEnvironment env) {
@@ -57,7 +114,7 @@ public class DimApp extends BaseAppV1 {
             .password("aaaaaa")
             .deserializer(new JsonDebeziumDeserializationSchema()) // converts SourceRecord to JSON String
             .build();
-      return  env
+        return env
             .fromSource(mySqlSource, WatermarkStrategy.noWatermarks(), "mysql-cdc")
             .map(json -> {
                 JSONObject obj = JSON.parseObject(json);
