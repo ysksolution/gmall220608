@@ -5,6 +5,7 @@ import com.alibaba.fastjson.JSONObject;
 import com.atguigu.gmall.realtime.app.BaseAppV1;
 import com.atguigu.gmall.realtime.bean.TableProcess;
 import com.atguigu.gmall.realtime.common.Constant;
+import com.atguigu.gmall.realtime.util.FlinkSinkUtil;
 import com.atguigu.gmall.realtime.util.JdbcUtil;
 import com.ververica.cdc.connectors.mysql.source.MySqlSource;
 import com.ververica.cdc.debezium.JsonDebeziumDeserializationSchema;
@@ -62,15 +63,24 @@ public class DimApp extends BaseAppV1 {
         // 4. 数据流和配置做 connect
         SingleOutputStreamOperator<Tuple2<JSONObject, TableProcess>> connectedStream = connectStreams(etledStream, tpStream);
         // 5. 去掉不需要的字段
-        delNoNeedColumns(connectedStream).print();
+        SingleOutputStreamOperator<Tuple2<JSONObject, TableProcess>> resultStream = delNoNeedColumns(connectedStream);
+        // 6. 把不同的数据写出到 phoenix 中的不同的表中
+        writeToPhoenix(resultStream);
         
+    }
     
-    
-        // 2. 现在数据既有事实表又维度表, 我们只要维度表的数据: 过滤出需要的所有维度表数据
-        // 使用动态的方式过滤出想要的维度
+    private void writeToPhoenix(SingleOutputStreamOperator<Tuple2<JSONObject, TableProcess>> resultStream) {
+        /*
+        没有专门的 phoenix sink, 所以需要自定义
         
-        // 3. 把不同的数据写出到 phoenix 中的不同的表中
-        
+        1. 能不能使用 jdbc sink
+            如果使用 jdbc sink, 流中所有数据只能写入到一个 表中.
+            
+            因为我们流中有多张表的数据, 所以不能使用 jdbc sink
+            
+        2. 自定义 sink
+         */
+        resultStream.addSink(FlinkSinkUtil.getPhoenixSink());
     }
     
     private SingleOutputStreamOperator<Tuple2<JSONObject, TableProcess>> delNoNeedColumns(SingleOutputStreamOperator<Tuple2<JSONObject, TableProcess>> stream) {
@@ -166,6 +176,9 @@ public class DimApp extends BaseAppV1 {
                 public TableProcess map(TableProcess tp) throws Exception {
                     // 根据每条配置信息,在 Phoenix 中建表
                     // create table if not exists user(id varchar, age varchar, sex varchar, constraint pk primary key(id)) SALT_BUCKETS = 4;
+                    if (conn.isClosed()) {
+                        conn = JdbcUtil.getPhoenixConnection();
+                    }
                     
                     String op = tp.getOp();
                     StringBuilder sql = null;
