@@ -31,6 +31,7 @@ import java.sql.PreparedStatement;
 import java.util.Arrays;
 import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 
 /**
  * @Author lzc
@@ -130,13 +131,25 @@ public class DimApp extends BaseAppV1 {
                     tpMap = new HashMap<>();
                     Connection conn = JdbcUtil.getMySqlConnection();
                     // 查询一个表中所有的行的数据
-                    List<TableProcess> tpList = JdbcUtil.queryList(conn, "select * from gmall_config.table_process", TableProcess.class);
+                    List<TableProcess> tpList = JdbcUtil.queryList(conn,
+                                                                   "select * from gmall_config.table_process",
+                                                                   TableProcess.class,
+                                                                   true);
                     
                     // 把每行数据放入到 map 中
                     for (TableProcess tp : tpList) {
                         String key = tp.getSourceTable() + ":" + tp.getSourceType();
                         tpMap.put(key, tp);
                     }
+                    
+                    // 日志中打预加载
+                    String msg = "配置信息预加载: \n\t\t";
+                    for (Map.Entry<String, TableProcess> kv : tpMap.entrySet()) {
+                        String key = kv.getKey();
+                        TableProcess v = kv.getValue();
+                        msg += key + "=>" + v + "\n\t\t";
+                    }
+                    log.warn(msg);
                     
                 }
                 
