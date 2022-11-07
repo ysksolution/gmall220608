@@ -143,7 +143,7 @@ public class DimApp extends BaseAppV1 {
                     }
                     
                     // 日志中打预加载
-                    String msg = "配置信息预加载: \n\t\t";
+                    String msg = "\n配置信息预加载: \n\t\t";
                     for (Map.Entry<String, TableProcess> kv : tpMap.entrySet()) {
                         String key = kv.getKey();
                         TableProcess v = kv.getValue();
@@ -180,7 +180,6 @@ public class DimApp extends BaseAppV1 {
                 public void processBroadcastElement(TableProcess tp,
                                                     Context ctx,
                                                     Collector<Tuple2<JSONObject, TableProcess>> out) throws Exception {
-                    System.out.println(tp.getSourceTable());
                     BroadcastState<String, TableProcess> state = ctx.getBroadcastState(tpStateDesc);
                     String key = tp.getSourceTable() + ":" + tp.getSourceType();
                     if ("d".equals(tp.getOp())) {
