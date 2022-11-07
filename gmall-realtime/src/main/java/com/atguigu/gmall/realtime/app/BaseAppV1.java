@@ -13,7 +13,7 @@ import org.apache.flink.streaming.api.environment.StreamExecutionEnvironment;
  * @Date 2022/11/4 14:05
  */
 public abstract class BaseAppV1 {
-    public void init(int port, int p, String ckAndGroupId, String topic){
+    public void init(int port, int p, String ckAndGroupIdAndJobName, String topic){
         System.setProperty("HADOOP_USER_NAME", "atguigu");
         // 从 kafka 读取topi ods_db 数据
         Configuration conf = new Configuration();
@@ -26,7 +26,7 @@ public abstract class BaseAppV1 {
         // 2. 设置状态后端: 使用状态状态后端
         env.setStateBackend(new HashMapStateBackend());
         // 3. 设置 checkpoint 的存储路径
-        env.getCheckpointConfig().setCheckpointStorage("hdfs://hadoop162:8020/gmall2022/" + ckAndGroupId);
+        env.getCheckpointConfig().setCheckpointStorage("hdfs://hadoop162:8020/gmall2022/" + ckAndGroupIdAndJobName);
         // 4. 设置 checkpoint 的超时时间
         env.getCheckpointConfig().setCheckpointTimeout(60 * 1000);
         // 5. 设置 checkpoint 的模式: 严格一次
@@ -39,13 +39,13 @@ public abstract class BaseAppV1 {
         env.getCheckpointConfig().setExternalizedCheckpointCleanup(CheckpointConfig.ExternalizedCheckpointCleanup.RETAIN_ON_CANCELLATION);
     
         // 从 topic 读取数据
-        DataStreamSource<String> stream = env.addSource(FlinkSourceUtil.getKafkaSource(ckAndGroupId, topic));
+        DataStreamSource<String> stream = env.addSource(FlinkSourceUtil.getKafkaSource(ckAndGroupIdAndJobName, topic));
         
         // 根据得到的流, 完成业务逻辑
         handle(env, stream);
     
         try {
-            env.execute();
+            env.execute(ckAndGroupIdAndJobName);
         } catch (Exception e) {
             e.printStackTrace();
         }
