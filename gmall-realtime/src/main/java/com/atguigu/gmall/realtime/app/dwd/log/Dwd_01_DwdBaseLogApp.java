@@ -71,7 +71,8 @@ public class Dwd_01_DwdBaseLogApp extends BaseAppV1 {
     }
     
     private HashMap<String, DataStream<JSONObject>> splitStream(SingleOutputStreamOperator<JSONObject> validatedStream) {
-        OutputTag<JSONObject> displayTag = new OutputTag<JSONObject>("display") {};
+        
+        OutputTag<JSONObject> displayTag = new OutputTag<JSONObject>("display"){};
         OutputTag<JSONObject> actionTag = new OutputTag<JSONObject>("action") {};
         OutputTag<JSONObject> errTag = new OutputTag<JSONObject>("err") {};
         OutputTag<JSONObject> pageTag = new OutputTag<JSONObject>("page") {};
