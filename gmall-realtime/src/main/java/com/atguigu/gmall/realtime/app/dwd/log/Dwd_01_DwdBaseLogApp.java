@@ -1,19 +1,28 @@
 package com.atguigu.gmall.realtime.app.dwd.log;
 
 import com.alibaba.fastjson.JSON;
+import com.alibaba.fastjson.JSONArray;
+import com.alibaba.fastjson.JSONAware;
 import com.alibaba.fastjson.JSONObject;
 import com.atguigu.gmall.realtime.app.BaseAppV1;
 import com.atguigu.gmall.realtime.common.Constant;
 import com.atguigu.gmall.realtime.util.AtguiguUtil;
+import com.atguigu.gmall.realtime.util.FlinkSinkUtil;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.flink.api.common.functions.FilterFunction;
 import org.apache.flink.api.common.functions.RichMapFunction;
 import org.apache.flink.api.common.state.ValueState;
 import org.apache.flink.api.common.state.ValueStateDescriptor;
 import org.apache.flink.configuration.Configuration;
+import org.apache.flink.streaming.api.datastream.DataStream;
 import org.apache.flink.streaming.api.datastream.DataStreamSource;
 import org.apache.flink.streaming.api.datastream.SingleOutputStreamOperator;
 import org.apache.flink.streaming.api.environment.StreamExecutionEnvironment;
+import org.apache.flink.streaming.api.functions.ProcessFunction;
+import org.apache.flink.util.Collector;
+import org.apache.flink.util.OutputTag;
+
+import java.util.HashMap;
 
 /**
  * @Author lzc
@@ -21,6 +30,13 @@ import org.apache.flink.streaming.api.environment.StreamExecutionEnvironment;
  */
 @Slf4j
 public class Dwd_01_DwdBaseLogApp extends BaseAppV1 {
+    
+    private final String START = "start";
+    private final String PAGE = "page";  // shift+ctrl+u
+    private final String ACTION = "action";
+    private final String ERR = "err";
+    private final String DISPLAY = "display";
+    
     public static void main(String[] args) {
         new Dwd_01_DwdBaseLogApp().init(
             3001,
@@ -37,9 +53,114 @@ public class Dwd_01_DwdBaseLogApp extends BaseAppV1 {
         //        2. 对数据做 etl
         SingleOutputStreamOperator<JSONObject> etledStream = etl(stream);
         //        3. 纠正新老客户
-        validateNewOrOld(etledStream).print();
+        SingleOutputStreamOperator<JSONObject> validatedStream = validateNewOrOld(etledStream);
         //        4. 分流
+        HashMap<String, DataStream<JSONObject>> streams = splitStream(validatedStream);
         //        5. 不同的流的数据写入到不同的 topic 种
+        writeToKafka(streams);
+    }
+    
+    private void writeToKafka(HashMap<String, DataStream<JSONObject>>  streams) {
+    
+        streams.get(PAGE).map(JSONAware::toJSONString).addSink(FlinkSinkUtil.getKafkaSink(Constant.TOPIC_DWD_TRAFFIC_PAGE));
+        streams.get(ERR).map(JSONAware::toJSONString).addSink(FlinkSinkUtil.getKafkaSink(Constant.TOPIC_DWD_TRAFFIC_ERR));
+        streams.get(DISPLAY).map(JSONAware::toJSONString).addSink(FlinkSinkUtil.getKafkaSink(Constant.TOPIC_DWD_TRAFFIC_DISPLAY));
+        streams.get(START).map(JSONAware::toJSONString).addSink(FlinkSinkUtil.getKafkaSink(Constant.TOPIC_DWD_TRAFFIC_START));
+        streams.get(ACTION).map(JSONAware::toJSONString).addSink(FlinkSinkUtil.getKafkaSink(Constant.TOPIC_DWD_TRAFFIC_ACTION));
+        
+    }
+    
+    private HashMap<String, DataStream<JSONObject>> splitStream(SingleOutputStreamOperator<JSONObject> validatedStream) {
+        OutputTag<JSONObject> displayTag = new OutputTag<JSONObject>("display") {};
+        OutputTag<JSONObject> actionTag = new OutputTag<JSONObject>("action") {};
+        OutputTag<JSONObject> errTag = new OutputTag<JSONObject>("err") {};
+        OutputTag<JSONObject> pageTag = new OutputTag<JSONObject>("page") {};
+        /*
+        测输出流
+            主流: 启动日志
+            测输出流: 活动 曝光 错误 页面
+         */
+        SingleOutputStreamOperator<JSONObject> startStream = validatedStream
+            .process(new ProcessFunction<JSONObject, JSONObject>() {
+                @Override
+                public void processElement(JSONObject obj,
+                                           Context ctx,
+                                           Collector<JSONObject> out) throws Exception {
+                   
+    
+                    JSONObject start = obj.getJSONObject("start");
+                    if (start != null) {
+                        out.collect(obj);
+                    }else{
+                        JSONObject common = obj.getJSONObject("common");
+                        JSONObject page = obj.getJSONObject("page");
+                        Long ts = obj.getLong("ts");
+                        
+                        
+                        // 启动日志和其他日志是互斥
+                        // 曝光
+                        JSONArray displays = obj.getJSONArray("displays");
+                        if (displays != null) {
+                            // 最好把 displays 拍平
+                            for (int i = 0; i < displays.size(); i++) {
+                                JSONObject display = displays.getJSONObject(i);
+                                display.putAll(common);
+                                display.put("ts", ts);
+                                if (page != null) {
+                                    display.putAll(page);
+                                }
+                                ctx.output(displayTag, display);
+                            }
+                            // 把曝光数据移除
+                            obj.remove("displays");
+                        }
+                        
+                        // action
+                        JSONArray actions = obj.getJSONArray("actions");
+                        if (actions != null) {
+                            for (int i = 0; i < actions.size(); i++) {
+                                JSONObject action = actions.getJSONObject(i);
+                                action.putAll(common);
+                                if (page != null) {
+                                    action.putAll(page);
+                                }
+                                ctx.output(actionTag, action);
+                            }
+                            obj.remove("actions");
+                        }
+                        // err
+                        JSONObject err = obj.getJSONObject("err");
+                        if (err != null) {
+                            ctx.output(errTag, obj );
+    
+                            obj.remove("err");
+                        }
+                        
+                        // page
+                        if (page != null) {
+                            ctx.output(pageTag, obj);
+                        }
+                    }
+    
+                }
+            });
+    
+        DataStream<JSONObject> pageStream = startStream.getSideOutput(pageTag);
+        DataStream<JSONObject> actionStream = startStream.getSideOutput(actionTag);
+        DataStream<JSONObject> displayStream = startStream.getSideOutput(displayTag);
+        DataStream<JSONObject> errStream = startStream.getSideOutput(errTag);
+        
+        // 集合list 数组  元组Tuple5
+        HashMap<String, DataStream<JSONObject>> streams = new HashMap<>();
+        streams.put(START, startStream);
+        streams.put(PAGE, pageStream);
+        streams.put(ACTION, actionStream);
+        streams.put(ERR, errStream);
+        streams.put(DISPLAY, displayStream);
+        
+        return streams;
+    
+    
     }
     
     private SingleOutputStreamOperator<JSONObject> validateNewOrOld(SingleOutputStreamOperator<JSONObject> stream) {
