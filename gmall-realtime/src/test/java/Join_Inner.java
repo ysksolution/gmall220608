@@ -9,9 +9,9 @@ import java.time.Duration;
  * @Author lzc
  * @Date 2022/11/8 10:22
  */
-public class Join_1 extends BaseSQLApp {
+public class Join_Inner extends BaseSQLApp {
     public static void main(String[] args) {
-        new Join_1().init(5001, 2,  "Join_1");
+        new Join_Inner().init(5001, 2, "Join_1");
     }
     
     @Override

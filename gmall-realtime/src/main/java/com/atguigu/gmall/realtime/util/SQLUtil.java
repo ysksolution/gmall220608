@@ -18,4 +18,23 @@ public class SQLUtil {
             "  'format' = 'csv'" +
             ")";
     }
+    
+    public static String getKafkaSinkDDL(String topic) {
+        return "with(" +
+            "  'connector' = 'kafka', " +
+            "  'properties.bootstrap.servers' = '" + Constant.KAFKA_BROKERS + "', " +
+            "  'topic' = '" + topic + "', " +
+            "  'format' = 'json'" +
+            ")";
+    }
+    
+    public static String getUpsetKafkaSinkDDL(String topic) {
+        return "with(" +
+            "  'connector' = 'upsert-kafka', " +
+            "  'properties.bootstrap.servers' = '" + Constant.KAFKA_BROKERS + "', " +
+            "  'topic' = '" + topic + "', " +
+            "  'key.format' = 'json', " +
+            "  'value.format' = 'json' " +
+            ")";
+    }
 }
