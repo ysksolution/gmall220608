@@ -24,12 +24,12 @@ public class Join_Left_Kafka extends BaseSQLApp {
         tEnv.executeSql("create table t1(" +
                             "id int, " +
                             "name string " +
-                            ")" + SQLUtil.getKafkaSourceDDL("t1", "Join_1"));
+                            ")" + SQLUtil.getKafkaSourceDDL("t1", "Join_1", "csv"));
     
         tEnv.executeSql("create table t2(" +
                             "id int, " +
                             "age int " +
-                            ")" + SQLUtil.getKafkaSourceDDL("t2", "Join_1"));
+                            ")" + SQLUtil.getKafkaSourceDDL("t2", "Join_1", "csv"));
     
         Table result = tEnv.sqlQuery("select " +
                                         "t1.id, " +
@@ -43,7 +43,7 @@ public class Join_Left_Kafka extends BaseSQLApp {
                             " name string, " +
                             " age int," +
                             " primary key (id) not enforced" +
-                            ")" + SQLUtil.getUpsetKafkaSinkDDL("t4"));
+                            ")" + SQLUtil.getUpsetKafkaDDL("t4"));
     
         result.executeInsert("t4");
     }

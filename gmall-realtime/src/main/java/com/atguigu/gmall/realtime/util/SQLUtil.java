@@ -8,14 +8,20 @@ import com.atguigu.gmall.realtime.common.Constant;
  */
 public class SQLUtil {
     
-    public static String getKafkaSourceDDL(String topic, String groupId) {
+    public static String getKafkaSourceDDL(String topic, String groupId, String... format) {
+        
+        String f = "json";
+        if (format.length > 0) {
+            f = format[0];
+        }
+        
         return "with(" +
             "  'connector' = 'kafka', " +
             "  'properties.bootstrap.servers' = '" + Constant.KAFKA_BROKERS + "', " +
             "  'properties.group.id' = '" + groupId + "', " +
             "  'topic' = '" + topic + "', " +
             "  'scan.startup.mode' = 'latest-offset', " +
-            "  'format' = 'csv'" +
+            "  'format' = '" + f + "'" +
             ")";
     }
     
@@ -28,7 +34,7 @@ public class SQLUtil {
             ")";
     }
     
-    public static String getUpsetKafkaSinkDDL(String topic) {
+    public static String getUpsetKafkaDDL(String topic) {
         return "with(" +
             "  'connector' = 'upsert-kafka', " +
             "  'properties.bootstrap.servers' = '" + Constant.KAFKA_BROKERS + "', " +

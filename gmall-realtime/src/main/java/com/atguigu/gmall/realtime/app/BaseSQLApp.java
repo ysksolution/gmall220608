@@ -54,9 +54,25 @@ public abstract class BaseSQLApp {
                             "  `type` string, " +
                             "  `ts` bigint, " +
                             "  `data` map<string, string>, " +
-                            "  `old` map<string, string> " +
+                            "  `old` map<string, string>, " +
+                            "   pt as proctime() " +
                             ")" + SQLUtil.getKafkaSourceDDL(Constant.TOPIC_ODS_DB, groupId));
         
+    }
+    
+    public void readBaseDic(StreamTableEnvironment tEnv){
+        tEnv.executeSql("create table base_dic(" +
+                            " dic_code string, " +
+                            " dic_name string " +
+                            ") WITH (" +
+                            "  'connector' = 'jdbc'," +
+                            "  'url' = 'jdbc:mysql://hadoop162:3306/gmall2022?useSSL=false'," +
+                            "  'table-name' = 'base_dic', " +
+                            "  'username' = 'root', " +
+                            "  'password' = 'aaaaaa', " +
+                            "  'lookup.cache.ttl' = '1 hour',  " +
+                            "  'lookup.cache.max-rows' = '10'  " +
+                            ")");
     }
     
     

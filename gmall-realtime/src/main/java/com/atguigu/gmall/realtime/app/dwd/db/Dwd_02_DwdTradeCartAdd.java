@@ -1,7 +1,10 @@
 package com.atguigu.gmall.realtime.app.dwd.db;
 
 import com.atguigu.gmall.realtime.app.BaseSQLApp;
+import com.atguigu.gmall.realtime.common.Constant;
+import com.atguigu.gmall.realtime.util.SQLUtil;
 import org.apache.flink.streaming.api.environment.StreamExecutionEnvironment;
+import org.apache.flink.table.api.Table;
 import org.apache.flink.table.api.bridge.java.StreamTableEnvironment;
 
 /**
@@ -19,37 +22,89 @@ public class Dwd_02_DwdTradeCartAdd extends BaseSQLApp {
         // 1. 通过 ddl 建立动态表与 ods_db 关联, 从这个 topic 进行读取数据
         readOdsDb(tEnv, "Dwd_02_DwdTradeCartAdd");
         
+        // 2. 读取字典表的数据
+        readBaseDic(tEnv);
         
-        // 2. 过滤出 cart_info 的数据
-        tEnv.sqlQuery("select " +
-                          " `data`['id'] id, " +
-                          " `data`['user_id'] user_id, " +
-                          " `data`['sku_id'] sku_id, " +
-                          " `data`['cart_price'] cart_price, " +
-                          " if(`type`='insert', " +
-                          "   cast(`data`['sku_num'] as int), " +
-                          "   cast(`data`['sku_num'] as int) - cast(`old`['sku_num'] as int)" +
-                          " ) sku_num, " +
-                          " `data`['source_id'] source_id," +
-                          " `data`['source_type'] source_type, " +
-                          " ts " +
-                          "from ods_db " +
-                          "where `database`='gmall2022' " +
-                          "and `table`='cart_info' " +
-                          "and " +
-                          "(" +
-                          "   `type`='insert'" +
-                          "    or " +
-                          "    (`type`='update' " +
-                          "      and `old`['sku_num'] is not null " +
-                          "      and cast(`data`['sku_num'] as int) > cast(`old`['sku_num'] as int)" +
-                          "    )" +
-                          ")").execute().print();
-        
+        // 3. 过滤出 cart_info 的数据
+        Table cartInfo = tEnv.sqlQuery("select " +
+                                           " `data`['id'] id, " +
+                                           " `data`['user_id'] user_id, " +
+                                           " `data`['sku_id'] sku_id, " +
+                                           " `data`['cart_price'] cart_price, " +
+                                           " if(`type`='insert', " +
+                                           "   cast(`data`['sku_num'] as int), " +
+                                           "   cast(`data`['sku_num'] as int) - cast(`old`['sku_num'] as int)" +
+                                           " ) sku_num, " +
+                                           " `data`['source_id'] source_id," +
+                                           " `data`['source_type'] source_type, " +
+                                           " ts," +
+                                           " pt " +
+                                           "from ods_db " +
+                                           "where `database`='gmall2022' " +
+                                           "and `table`='cart_info' " +
+                                           "and " +
+                                           "(" +
+                                           "   `type`='insert'" +
+                                           "    or " +
+                                           "    (`type`='update' " +
+                                           "      and `old`['sku_num'] is not null " +
+                                           "      and cast(`data`['sku_num'] as int) > cast(`old`['sku_num'] as int)" +
+                                           "    )" +
+                                           ")");
+        tEnv.createTemporaryView("cart_info", cartInfo);
+        // 4. cart_info look up join 字典表
+        Table result = tEnv.sqlQuery("select " +
+                                         "ci.id, " +
+                                         "ci.user_id, " +
+                                         "ci.sku_id, " +
+                                         "ci.source_id, " +
+                                         "ci.source_type, " +
+                                         "dic.dic_name source_type_name, " +
+                                         "cast(ci.sku_num as string) sku_num, " +
+                                         "ci.ts " +
+                                         "from cart_info ci " +
+                                         "join base_dic for system_time as of ci.pt as dic " +
+                                         "on ci.source_type=dic.dic_code");
         // 3. 把加购事实表数据写入到 kafka 中
+        tEnv.executeSql("create table dwd_trade_cart_add(" +
+                            "id string, " +
+                            "user_id string, " +
+                            "sku_id string, " +
+                            "source_id string, " +
+                            "source_type_code string, " +
+                            "source_type_name string, " +
+                            "sku_num string, " +
+                            "ts bigint " +
+                            ")" + SQLUtil.getKafkaSinkDDL(Constant.TOPIC_DWD_TRADE_CART_ADD));
+    
+        result.executeInsert("dwd_trade_cart_add");
     }
 }
 /*
+join 总结:
+    join: 内连接
+    left join: 左连接
+        默认情况所有数据全部永远缓存到内存中. oom
+            添加 ttl
+        左连接:
+            当左表数据先到: 会输出数据, 右表数据是 null, 当右来了之后,先删除刚才数据(kafka: 写入 null),
+                再新增一条.
+                
+            写入到 kafka: 使用 upsert-kafka
+            
+            消费upsert-kafka的结果:
+                null 值的处理
+                    流:自定义反序列化器
+                    sql: 不用额外处理
+    lookup join
+        专门用来在 sql 中 实时表去 join 维度表数据
+            语法: 用的时态 join 的处理时间的语法
+            1. 左表必须有处理时间字段
+            2. 右表通过 jdbc 连接数据库
+            
+            3. ... for system_time as of left.pt as dic
+            
+------
 维度退化:
 用到 sql 的 join
 
