@@ -1,6 +1,8 @@
 package com.atguigu.gmall.realtime.app.dwd.db;
 
 import com.atguigu.gmall.realtime.app.BaseSQLApp;
+import com.atguigu.gmall.realtime.common.Constant;
+import com.atguigu.gmall.realtime.util.SQLUtil;
 import org.apache.flink.streaming.api.environment.StreamExecutionEnvironment;
 import org.apache.flink.table.api.Table;
 import org.apache.flink.table.api.bridge.java.StreamTableEnvironment;
@@ -103,11 +105,33 @@ public class Dwd_03_DwdTradeOrderDetail extends BaseSQLApp {
                                         "left join order_detail_coupon cou on od.id=cou.order_detail_id " +
                                         "join base_dic for system_time as of od.pt as dic " +
                                         "on od.source_type=dic.dic_code");
-        result.execute().print();
-    
         // 8. 创建一个动态表与 kafka 的 topic 关联
+        tEnv.executeSql("create table dwd_trade_order_detail(" +
+                            "id string, " +
+                            "order_id string, " +
+                            "user_id string, " +
+                            "sku_id string, " +
+                            "sku_name string, " +
+                            "province_id string, " +
+                            "activity_id string, " +
+                            "activity_rule_id string, " +
+                            "coupon_id string, " +
+                            "date_id string, " +
+                            "create_time string, " +
+                            "source_id string, " +
+                            "source_type string, " +
+                            "source_type_name string, " +
+                            "sku_num string, " +
+                            "split_original_amount string, " +
+                            "split_activity_amount string, " +
+                            "split_coupon_amount string, " +
+                            "split_total_amount string, " +
+                            "ts bigint, " +
+                            "primary key(id) not enforced " +
+                            ")" + SQLUtil.getUpsetKafkaDDL(Constant.TOPIC_DWD_TRADE_ORDER_DETAIL));
         
         // 9. join 的结果写入到 kafka 中
+        result.executeInsert("dwd_trade_order_detail");
     }
 }
 /*
