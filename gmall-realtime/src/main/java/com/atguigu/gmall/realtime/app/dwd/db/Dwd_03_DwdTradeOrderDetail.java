@@ -7,6 +7,8 @@ import org.apache.flink.streaming.api.environment.StreamExecutionEnvironment;
 import org.apache.flink.table.api.Table;
 import org.apache.flink.table.api.bridge.java.StreamTableEnvironment;
 
+import java.time.Duration;
+
 /**
  * @Author lzc
  * @Date 2022/11/9 08:28
@@ -22,6 +24,9 @@ public class Dwd_03_DwdTradeOrderDetail extends BaseSQLApp {
     
     @Override
     protected void handle(StreamExecutionEnvironment env, StreamTableEnvironment tEnv) {
+        // 有了 join 和 left join 给事实表设置 ttl
+        tEnv.getConfig().setIdleStateRetention(Duration.ofSeconds(5));
+        
         // 1. 读取 ods_db 数据
         readOdsDb(tEnv, "Dwd_03_DwdTradeOrderDetail");
         // 2. 读取字典表
