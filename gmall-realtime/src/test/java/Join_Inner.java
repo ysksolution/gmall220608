@@ -23,6 +23,8 @@ public class Join_Inner extends BaseSQLApp {
         // order_info  order_detail  payment_info 订单支付: ttl 30m+5s
         tEnv.getConfig().setIdleStateRetention(Duration.ofSeconds(20));
         
+        tEnv.getConfig().getConfiguration().setString("table.exec.state.ttl", "20 second");
+        
         tEnv.executeSql("create table t1(" +
                             "id int, " +
                             "name string " +

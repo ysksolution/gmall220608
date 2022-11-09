@@ -8,6 +8,7 @@ import org.apache.flink.table.api.bridge.java.StreamTableEnvironment;
  * @Date 2022/11/8 10:22
  */
 public class Consume_Kafka_SQL_2 extends BaseSQLApp {
+    
     public static void main(String[] args) {
         new Consume_Kafka_SQL_2().init(5002, 1, "Consume_Kafka_SQL_1");
     }
