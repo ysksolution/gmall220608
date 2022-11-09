@@ -90,7 +90,7 @@ public class Dwd_04_DwdTradeCancelDetail extends BaseSQLApp {
                                         "od.split_activity_amount, " +
                                         "od.split_coupon_amount, " +
                                         "od.split_total_amount, " +
-                                        "oi.ts  " +
+                                        "oi.ts " +
                                         "from order_info oi " +
                                         "join dwd_trade_order_detail od " +
                                         "on oi.id=od.order_id");
