@@ -14,14 +14,14 @@ import org.apache.flink.table.api.bridge.java.StreamTableEnvironment;
  * @Date 2022/11/4 14:05
  */
 public abstract class BaseSQLApp {
-    public void init(int port, int p, String ckAnAndJobName){
+    public void init(int port, int p, String ckAnAndJobName) {
         System.setProperty("HADOOP_USER_NAME", "atguigu");
         // 从 kafka 读取topi ods_db 数据
         Configuration conf = new Configuration();
         conf.setInteger("rest.port", port);
         StreamExecutionEnvironment env = StreamExecutionEnvironment.getExecutionEnvironment(conf);
         env.setParallelism(p);
-    
+        
         // 1. 开启 checkpoint
         env.enableCheckpointing(3000);
         // 2. 设置状态后端: 使用状态状态后端
@@ -38,7 +38,7 @@ public abstract class BaseSQLApp {
         env.getCheckpointConfig().setMinPauseBetweenCheckpoints(500);
         // 8. 设置当 job 取消的时候, 是否保留 checkpoint 的数据
         env.getCheckpointConfig().setExternalizedCheckpointCleanup(CheckpointConfig.ExternalizedCheckpointCleanup.RETAIN_ON_CANCELLATION);
-    
+        
         StreamTableEnvironment tEnv = StreamTableEnvironment.create(env);
         // 给 sql job 设置 name
         tEnv.getConfig().getConfiguration().setString("pipeline.name", ckAnAndJobName);
@@ -49,7 +49,7 @@ public abstract class BaseSQLApp {
     
     protected abstract void handle(StreamExecutionEnvironment env, StreamTableEnvironment tEnv);
     
-    public void readOdsDb(StreamTableEnvironment tEnv, String groupId){
+    public void readOdsDb(StreamTableEnvironment tEnv, String groupId) {
         tEnv.executeSql("create table ods_db(" +
                             " `database` string, " +
                             "  `table` string, " +
@@ -62,7 +62,7 @@ public abstract class BaseSQLApp {
         
     }
     
-    public void readBaseDic(StreamTableEnvironment tEnv){
+    public void readBaseDic(StreamTableEnvironment tEnv) {
         tEnv.executeSql("create table base_dic(" +
                             " dic_code string, " +
                             " dic_name string " +
