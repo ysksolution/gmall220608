@@ -21,7 +21,7 @@ public class SQLUtil {
             "  'properties.group.id' = '" + groupId + "', " +
             "  'topic' = '" + topic + "', " +
             "  'scan.startup.mode' = 'latest-offset', " +
-            "  'format' = '" + f + "'" +
+            "  'format' = '" + f + "' " +
             ")";
     }
     

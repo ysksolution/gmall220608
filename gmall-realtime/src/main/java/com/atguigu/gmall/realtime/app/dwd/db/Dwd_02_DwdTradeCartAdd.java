@@ -63,7 +63,7 @@ public class Dwd_02_DwdTradeCartAdd extends BaseSQLApp {
                                          "cast(ci.sku_num as string) sku_num, " +
                                          "ci.ts " +
                                          "from cart_info ci " +
-                                         "join base_dic for system_time as of ci.pt as dic " +
+                                         "left join base_dic for system_time as of ci.pt as dic " +
                                          "on ci.source_type=dic.dic_code");
         // 3. 把加购事实表数据写入到 kafka 中
         tEnv.executeSql("create table dwd_trade_cart_add(" +
