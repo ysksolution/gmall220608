@@ -88,7 +88,7 @@ public class FlinkSinkUtil {
         String url = Constant.CLICKHOUSE_URL;
         // insert into person(id,age, name)values(?,?,?)
         String columns = Arrays.stream(tClass.getDeclaredFields()).map(f -> f.getName()).collect(Collectors.joining(","));
-    
+        
         StringBuilder sql = new StringBuilder();
         sql
             .append("insert into ")
@@ -109,37 +109,44 @@ public class FlinkSinkUtil {
                                                    String user,
                                                    String password) {
         
-        return JdbcSink.sink(sql,
-                             new JdbcStatementBuilder<T>() {
-                                 @Override
-                                 public void accept(PreparedStatement ps,
-                                                    T t) throws SQLException {
-                                     // insert into a(stt,edt,keyword,keyword_count,ts)values(?,?,?,?,?)
-                                     // 只做一件事: 给 sql 中的占位符赋值
-                                     // 要根据你的 sql 语句来进行赋值  TODO
-                                     // 获取一个类: 类名.class  Class.forName("类名") 对象.getClass()  ClassLoader.getSystemClassLoader().loadClass()
-                                     Class<?> tClass = t.getClass();
-                                     Field[] fields = tClass.getDeclaredFields();
-                                     for (int i = 0; i < fields.length; i++) {
-                                         Field field = fields[i];
-                                        // field.get()
-                                     }
-    
-    
-                                 }
-                             },
-                             new JdbcExecutionOptions.Builder()
-                                 .withBatchSize(1024) // 批次大小
-                                 .withBatchIntervalMs(3000)  // 每 3 秒刷新一次
-                                 .withMaxRetries(3)
-                                 .build(),
-                             new JdbcConnectionOptions.JdbcConnectionOptionsBuilder()
-                                 .withDriverName(driver)
-                                 .withUrl(url)
-                                 .withUsername(user)
-                                 .withPassword(password)
-                                 .build()
-        );
+        return JdbcSink
+            .sink(sql,
+                  new JdbcStatementBuilder<T>() {
+                      @Override
+                      public void accept(PreparedStatement ps,
+                                         T t) throws SQLException {
+                          // insert into a(stt,edt,keyword,keyword_count,ts)values(?,?,?,?,?)
+                          // 只做一件事: 给 sql 中的占位符赋值
+                          // 要根据你的 sql 语句来进行赋值  TODO
+                          // 获取一个类: 类名.class  Class.forName("类名") 对象.getClass()  ClassLoader.getSystemClassLoader().loadClass()
+                          Class<?> tClass = t.getClass();
+                          Field[] fields = tClass.getDeclaredFields();
+                          try {
+                              for (int i = 0; i < fields.length; i++) {
+                                  Field field = fields[i];
+                                  field.setAccessible(true);
+                                  Object v  = field.get(t);
+                                  ps.setObject(i + 1, v);
+                              }
+                          } catch (IllegalAccessException e) {
+                              throw new RuntimeException(e);
+                          }
+                    
+                    
+                      }
+                  },
+                  new JdbcExecutionOptions.Builder()
+                      .withBatchSize(1024) // 批次大小
+                      .withBatchIntervalMs(3000)  // 每 3 秒刷新一次
+                      .withMaxRetries(3)
+                      .build(),
+                  new JdbcConnectionOptions.JdbcConnectionOptionsBuilder()
+                      .withDriverName(driver)
+                      .withUrl(url)
+                      .withUsername(user)
+                      .withPassword(password)
+                      .build()
+            );
     }
     
 }
