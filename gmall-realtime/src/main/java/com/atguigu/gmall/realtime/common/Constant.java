@@ -13,6 +13,10 @@ public class Constant {
     public static final String MYSQL_DRIVER = "com.mysql.cj.jdbc.Driver";
     public static final String MYSQL_URL = "jdbc:mysql://hadoop162:3306?useSSL=false";
     
+    public static final String CLICKHOUSE_DRIVER = "ru.yandex.clickhouse.ClickHouseDriver";
+    public static final String CLICKHOUSE_URL = "jdbc:clickhouse://hadoop162:8123/gmall2022";
+    
+    
     public static final String TOPIC_ODS_LOG = "ods_log";
     public static final String TOPIC_ODS_DB = "ods_db";
     // dwd topic
@@ -31,4 +35,5 @@ public class Constant {
     
     public static final String TOPIC_DWD_TRADE_ORDER_REFUND = "dwd_trade_order_refund";
     public static final String TOPIC_DWD_TRADE_REFUND_PAY_SUC = "dwd_trade_refund_pay_suc";
+    
 }

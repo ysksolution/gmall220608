@@ -4,6 +4,7 @@ import com.atguigu.gmall.realtime.app.BaseSQLApp;
 import com.atguigu.gmall.realtime.bean.KeywordBean;
 import com.atguigu.gmall.realtime.common.Constant;
 import com.atguigu.gmall.realtime.function.IkAnalyzer;
+import com.atguigu.gmall.realtime.util.FlinkSinkUtil;
 import com.atguigu.gmall.realtime.util.SQLUtil;
 import org.apache.flink.streaming.api.datastream.SingleOutputStreamOperator;
 import org.apache.flink.streaming.api.environment.StreamExecutionEnvironment;
@@ -73,7 +74,8 @@ public class Dws_01_DwsTrafficKeywordPageViewWindow extends BaseSQLApp {
             .toRetractStream(resultTable, KeywordBean.class)
             .filter(t -> t.f0)  // 只要 true: 新增或更新后的数据
             .map(t -> t.f1);
-        stream.print();
+        
+        stream.addSink(FlinkSinkUtil.getClickHouseSink("dws_traffic_keyword_page_view_window", KeywordBean.class));
     
     
         try {

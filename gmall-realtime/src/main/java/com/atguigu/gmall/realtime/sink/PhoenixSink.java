@@ -44,7 +44,6 @@ public class PhoenixSink extends RichSinkFunction<Tuple2<JSONObject, TableProces
         // jdbc: 执行一个插入语句
         // upsert into user(a,b,c,d)values(?,?,?,?)
         StringBuilder sql = new StringBuilder();
-        // TODO 拼接 sql
         sql
             .append("upsert into ")
             .append(tp.getSinkTable())
@@ -55,7 +54,7 @@ public class PhoenixSink extends RichSinkFunction<Tuple2<JSONObject, TableProces
             .append(")");
         log.warn("插入语句: " + sql.toString());
         PreparedStatement ps = conn.prepareStatement(sql.toString());
-        // TODO 给占位符进行赋值
+        // 给占位符进行赋值
         // 根据列名去 data 中获取数据
         String[] columns = tp.getSinkColumns().split(",");
         for (int i = 0; i < columns.length; i++) {
