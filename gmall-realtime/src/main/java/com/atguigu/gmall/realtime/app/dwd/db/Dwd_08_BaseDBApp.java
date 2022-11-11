@@ -5,20 +5,28 @@ import com.alibaba.fastjson.JSONObject;
 import com.atguigu.gmall.realtime.app.BaseAppV1;
 import com.atguigu.gmall.realtime.bean.TableProcess;
 import com.atguigu.gmall.realtime.common.Constant;
+import com.atguigu.gmall.realtime.util.FlinkSinkUtil;
+import com.atguigu.gmall.realtime.util.JdbcUtil;
 import com.ververica.cdc.connectors.mysql.source.MySqlSource;
 import com.ververica.cdc.debezium.JsonDebeziumDeserializationSchema;
 import org.apache.flink.api.common.eventtime.WatermarkStrategy;
 import org.apache.flink.api.common.functions.FilterFunction;
+import org.apache.flink.api.common.functions.MapFunction;
 import org.apache.flink.api.common.state.BroadcastState;
 import org.apache.flink.api.common.state.MapStateDescriptor;
 import org.apache.flink.api.common.state.ReadOnlyBroadcastState;
 import org.apache.flink.api.java.tuple.Tuple2;
+import org.apache.flink.configuration.Configuration;
 import org.apache.flink.streaming.api.datastream.BroadcastStream;
 import org.apache.flink.streaming.api.datastream.DataStreamSource;
 import org.apache.flink.streaming.api.datastream.SingleOutputStreamOperator;
 import org.apache.flink.streaming.api.environment.StreamExecutionEnvironment;
 import org.apache.flink.streaming.api.functions.co.BroadcastProcessFunction;
 import org.apache.flink.util.Collector;
+
+import java.util.Arrays;
+import java.util.HashMap;
+import java.util.List;
 
 /**
  * @Author lzc
@@ -42,21 +50,63 @@ public class Dwd_08_BaseDBApp extends BaseAppV1 {
         // 2. 通过flink cdc 读配置表数据
         SingleOutputStreamOperator<TableProcess> tpStream = readTableProcess(env);
         // 3. 数据流和配置进行 connect
-        connect(etledStream, tpStream);
-        
+        SingleOutputStreamOperator<Tuple2<JSONObject, TableProcess>> connectedStream = connect(etledStream, tpStream);
+    
         // 4. 过滤掉不需要的字段
-        
+        connectedStream = delNoNeedColumns(connectedStream);
         // 5. 不同表的数据写出到不同的 topic 种
+        writeToKafka(connectedStream);
     }
     
-    private void connect(SingleOutputStreamOperator<JSONObject> dataStream,
-                         SingleOutputStreamOperator<TableProcess> tpStream) {
+    private void writeToKafka(SingleOutputStreamOperator<Tuple2<JSONObject, TableProcess>> stream) {
+        stream.addSink(FlinkSinkUtil.getKafkaSink());
+    }
+    
+    
+    private SingleOutputStreamOperator<Tuple2<JSONObject, TableProcess>> delNoNeedColumns(
+        SingleOutputStreamOperator<Tuple2<JSONObject, TableProcess>> stream) {
+        return stream.map(new MapFunction<Tuple2<JSONObject, TableProcess>, Tuple2<JSONObject, TableProcess>>() {
+            @Override
+            public Tuple2<JSONObject, TableProcess> map(Tuple2<JSONObject, TableProcess> tp) throws Exception {
+                JSONObject data = tp.f0;
+                // data中的 key 在 columns 中存在就保留不存在就删除
+                List<String> columns = Arrays.asList(tp.f1.getSinkColumns().split(","));
+                data.keySet().removeIf(key -> !columns.contains(key) && !"op_type".equals(key));
+                return tp;
+            }
+        });
+    }
+    
+    private SingleOutputStreamOperator<Tuple2<JSONObject, TableProcess>> connect(SingleOutputStreamOperator<JSONObject> dataStream,
+                                                                                 SingleOutputStreamOperator<TableProcess> tpStream) {
         //1. 配置流做成广播流
         MapStateDescriptor<String, TableProcess> tpStateDesc = new MapStateDescriptor<>("tpState", String.class, TableProcess.class);
         BroadcastStream<TableProcess> bcStream = tpStream.broadcast(tpStateDesc);
-        dataStream
+      return  dataStream
             .connect(bcStream)
             .process(new BroadcastProcessFunction<JSONObject, TableProcess, Tuple2<JSONObject, TableProcess>>() {
+    
+                private HashMap<String, TableProcess> tpMap;
+    
+                @Override
+                public void open(Configuration parameters) throws Exception {
+                    List<TableProcess> tpList = JdbcUtil
+                        .queryList(JdbcUtil.getMySqlConnection(),
+                                   "select * from gmall_config.table_process where sink_type='dwd'",
+                                   TableProcess.class,
+                                   true
+                        );
+                    tpMap = new HashMap<>();
+    
+                    for (TableProcess tp : tpList) {
+                        
+                        String key = tp.getSourceTable()
+                            + ":" + tp.getSourceType()
+                            + (tp.getSinkExtend() == null ? "" : tp.getSinkExtend());
+                        tpMap.put(key, tp);
+                    }
+                }
+                
                 @Override
                 public void processElement(JSONObject obj,
                                            ReadOnlyContext ctx,
@@ -64,17 +114,17 @@ public class Dwd_08_BaseDBApp extends BaseAppV1 {
                     // 根据 key 来获取对应的配置信息
                     JSONObject data = obj.getJSONObject("data");
                     JSONObject old = obj.getJSONObject("old");
-    
+                    
                     String table = obj.getString("table");
                     String type = obj.getString("type");
-                    String key =  table+ ":" + type;
+                    String key = table + ":" + type;
                     
-                    if("coupon_use".equals(table) && "update".equals(type)){
+                    if ("coupon_use".equals(table) && "update".equals(type)) {
                         String newStatus = data.getString("coupon_status");
                         String oldStatus = old.getString("coupon_status");
                         if ("1401".equals(oldStatus) && "1402".equals(newStatus)) {
                             key += "{\"data\": {\"coupon_status\": \"1402\"}, \"old\": {\"coupon_status\": \"1401\"}}";
-                        }else if("1402".equals(oldStatus) && "1403".equals(newStatus)){
+                        } else if ("1402".equals(oldStatus) && "1403".equals(newStatus)) {
                             key += "{\"data\": {\"used_time\": \"not null\"}}";
                         }
                     }
@@ -82,11 +132,14 @@ public class Dwd_08_BaseDBApp extends BaseAppV1 {
                     ReadOnlyBroadcastState<String, TableProcess> tpState = ctx.getBroadcastState(tpStateDesc);
                     TableProcess tp = tpState.get(key);
     
-                    if (tp != null) {
-                        out.collect(Tuple2.of(data,tp));
+                    if (tp == null) {
+                        tp = tpMap.get(key);
                     }
                     
-    
+                    
+                    if (tp != null) {
+                        out.collect(Tuple2.of(data, tp));
+                    }
                 }
                 
                 @Override
@@ -96,14 +149,13 @@ public class Dwd_08_BaseDBApp extends BaseAppV1 {
                     String key = tp.getSourceTable()
                         + ":" + tp.getSourceType()
                         + (tp.getSinkExtend() == null ? "" : tp.getSinkExtend());
-    
+                    
                     BroadcastState<String, TableProcess> state = ctx.getBroadcastState(tpStateDesc);
                     state.put(key, tp);
                     
                 }
-            })
-            .print();
-        
+            });
+           
     }
     
     private SingleOutputStreamOperator<TableProcess> readTableProcess(StreamExecutionEnvironment env) {

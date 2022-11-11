@@ -46,4 +46,31 @@ public class FlinkSinkUtil {
             FlinkKafkaProducer.Semantic.EXACTLY_ONCE
         );
     }
+    
+    public static SinkFunction<Tuple2<JSONObject, TableProcess>> getKafkaSink() {
+        Properties props = new Properties();
+        // TODO
+        props.setProperty("bootstrap.servers", Constant.KAFKA_BROKERS);
+    
+        // transaction.max.timeout.ms 服务器
+        // transaction.timeout.ms 生产者
+        props.put("transaction.timeout.ms", 15 * 60 * 1000);
+    
+        return new FlinkKafkaProducer<Tuple2<JSONObject, TableProcess>>(
+            "default",
+            new KafkaSerializationSchema<Tuple2<JSONObject, TableProcess>>(){
+                @Override
+                public ProducerRecord<byte[], byte[]> serialize(Tuple2<JSONObject, TableProcess> t,
+                                                                @Nullable Long timestamp) {
+                    String data = t.f0.toJSONString();
+                    String topic = t.f1.getSinkTable();
+    
+                    return new ProducerRecord<>(topic, data.getBytes(StandardCharsets.UTF_8));
+                }
+            },
+            props,
+            FlinkKafkaProducer.Semantic.EXACTLY_ONCE
+        );
+        
+    }
 }
