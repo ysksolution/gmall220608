@@ -1,5 +1,6 @@
 package com.atguigu.gmall.realtime.util;
 
+import java.text.ParseException;
 import java.text.SimpleDateFormat;
 
 /**
@@ -17,5 +18,9 @@ public class AtguiguUtil {
     
     public static String tsToDateTime(long ts) {
         return new SimpleDateFormat("yyyy-MM-dd HH:mm:ss").format(ts);
+    }
+    
+    public static long dateToTs(String date) throws ParseException {
+        return new SimpleDateFormat("yyyy-MM-dd").parse(date).getTime();
     }
 }
