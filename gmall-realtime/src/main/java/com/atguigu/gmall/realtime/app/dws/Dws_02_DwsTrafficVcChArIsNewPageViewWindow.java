@@ -1,4 +1,4 @@
-package com.atguigu.gmall.realtime.app.dwd.log;
+package com.atguigu.gmall.realtime.app.dws;
 
 import com.alibaba.fastjson.JSON;
 import com.alibaba.fastjson.JSONObject;
