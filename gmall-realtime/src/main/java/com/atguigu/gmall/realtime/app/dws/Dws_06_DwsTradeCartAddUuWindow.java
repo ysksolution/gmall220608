@@ -30,7 +30,7 @@ import java.time.Duration;
 public class Dws_06_DwsTradeCartAddUuWindow extends BaseAppV1 {
     public static void main(String[] args) {
         new Dws_06_DwsTradeCartAddUuWindow().init(
-            4005,
+            4006,
             2,
             "Dws_06_DwsTradeCartAddUuWindow",
             Constant.TOPIC_DWD_TRADE_CART_ADD

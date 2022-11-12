@@ -12,7 +12,7 @@ import org.apache.flink.streaming.api.environment.StreamExecutionEnvironment;
 public class Dws_07_DwsTradePaymentSucWindow extends BaseAppV1 {
     public static void main(String[] args) {
         new Dws_07_DwsTradePaymentSucWindow().init(
-            4005,
+            4007,
             2,
             "Dws_07_DwsTradePaymentSucWindow",
             Constant.TOPIC_DWD_TRADE_PAY_DETAIL_SUC
