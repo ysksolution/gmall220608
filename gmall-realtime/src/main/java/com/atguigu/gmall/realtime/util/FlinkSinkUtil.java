@@ -9,6 +9,7 @@ import org.apache.flink.connector.jdbc.JdbcConnectionOptions;
 import org.apache.flink.connector.jdbc.JdbcExecutionOptions;
 import org.apache.flink.connector.jdbc.JdbcSink;
 import org.apache.flink.connector.jdbc.JdbcStatementBuilder;
+import org.apache.flink.shaded.guava18.com.google.common.base.CaseFormat;
 import org.apache.flink.streaming.api.functions.sink.SinkFunction;
 import org.apache.flink.streaming.connectors.kafka.FlinkKafkaProducer;
 import org.apache.flink.streaming.connectors.kafka.KafkaSerializationSchema;
@@ -87,7 +88,10 @@ public class FlinkSinkUtil {
         String drier = Constant.CLICKHOUSE_DRIVER;
         String url = Constant.CLICKHOUSE_URL;
         // insert into person(id,age, name)values(?,?,?)
-        String columns = Arrays.stream(tClass.getDeclaredFields()).map(f -> f.getName()).collect(Collectors.joining(","));
+        String columns = Arrays
+            .stream(tClass.getDeclaredFields())
+            .map(f -> CaseFormat.LOWER_CAMEL.to(CaseFormat.LOWER_UNDERSCORE, f.getName()))
+            .collect(Collectors.joining(","));
         
         StringBuilder sql = new StringBuilder();
         sql
@@ -125,7 +129,7 @@ public class FlinkSinkUtil {
                               for (int i = 0; i < fields.length; i++) {
                                   Field field = fields[i];
                                   field.setAccessible(true);
-                                  Object v  = field.get(t);
+                                  Object v = field.get(t);
                                   ps.setObject(i + 1, v);
                               }
                           } catch (IllegalAccessException e) {

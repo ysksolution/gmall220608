@@ -15,4 +15,7 @@ public class AtguiguUtil {
         return new SimpleDateFormat("yyyy-MM-dd").format(ts);
     }
     
+    public static String tsToDateTime(long ts) {
+        return new SimpleDateFormat("yyyy-MM-dd HH:mm:ss").format(ts);
+    }
 }
