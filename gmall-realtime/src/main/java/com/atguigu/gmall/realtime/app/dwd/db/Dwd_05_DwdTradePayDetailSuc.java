@@ -30,7 +30,7 @@ public class Dwd_05_DwdTradePayDetailSuc extends BaseSQLApp {
         
         // 2. 读取字典表
         readBaseDic(tEnv);
-        // 3. 读取dwd_trade_order_detail
+        // 3. 读取 dwd_trade_order_detail
         tEnv.executeSql("create table dwd_trade_order_detail(" +
                             "id string, " +
                             "order_id string, " +
