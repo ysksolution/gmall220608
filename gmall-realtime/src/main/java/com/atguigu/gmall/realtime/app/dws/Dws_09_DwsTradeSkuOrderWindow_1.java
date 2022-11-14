@@ -88,7 +88,6 @@ public class Dws_09_DwsTradeSkuOrderWindow_1 extends BaseAppV1 {
                         bean.setTs(System.currentTimeMillis());
     
                         out.collect(bean);
-    
                     }
                 }
             );
