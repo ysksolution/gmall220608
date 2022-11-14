@@ -5,6 +5,7 @@ import com.alibaba.fastjson.JSONObject;
 import com.atguigu.gmall.realtime.app.BaseAppV1;
 import com.atguigu.gmall.realtime.bean.TradeSkuOrderBean;
 import com.atguigu.gmall.realtime.common.Constant;
+import org.apache.commons.beanutils.BeanUtils;
 import org.apache.flink.api.common.functions.MapFunction;
 import org.apache.flink.api.common.state.ValueState;
 import org.apache.flink.api.common.state.ValueStateDescriptor;
@@ -21,9 +22,9 @@ import java.math.BigDecimal;
  * @Author lzc
  * @Date 2022/11/13 09:13
  */
-public class Dws_09_DwsTradeSkuOrderWindow extends BaseAppV1 {
+public class Dws_09_DwsTradeSkuOrderWindow_1 extends BaseAppV1 {
     public static void main(String[] args) {
-        new Dws_09_DwsTradeSkuOrderWindow().init(
+        new Dws_09_DwsTradeSkuOrderWindow_1().init(
             4009,
             2,
             "Dws_09_DwsTradeSkuOrderWindow",
@@ -110,23 +111,30 @@ public class Dws_09_DwsTradeSkuOrderWindow extends BaseAppV1 {
                 public void processElement(TradeSkuOrderBean bean,
                                            Context ctx,
                                            Collector<TradeSkuOrderBean> out) throws Exception {
+                    // 数据膨胀:
+                    // a   -> a
+                    // b   -> b-a
+                    // c   -> c-b
                     
+                    //
                     TradeSkuOrderBean lastBean = beanState.value();
-                    if (lastBean != null) {
-                        // 不是第一条数据:
-                        // a: 把状态中的四个指标取反, 然后放入到流中
-                        lastBean.setOriginalAmount(lastBean.getOriginalAmount().negate());
-                        lastBean.setOrderAmount(lastBean.getOrderAmount().negate());
-                        lastBean.setActivityAmount(lastBean.getActivityAmount().negate());
-                        lastBean.setCouponAmount(lastBean.getCouponAmount().negate());
-                        out.collect(lastBean);
+    
+                    if (lastBean == null) {
+                        beanState.update(bean);
                         
+                        out.collect(bean);
+                    }else{
+                        // 由于对象是可变对象, 所以最好 copy 一个新的对象, 再存入到状态中
+                        TradeSkuOrderBean newBean = new TradeSkuOrderBean();
+                        BeanUtils.copyProperties(newBean, bean); // 把右边的对象的属性 copy 到左边的对象中
+                        beanState.update(newBean);// 更新前的数据
+                        
+                        bean.setOriginalAmount(bean.getOriginalAmount().subtract(lastBean.getOriginalAmount()));
+                        bean.setOrderAmount(bean.getOrderAmount().subtract(lastBean.getOrderAmount()));
+                        bean.setActivityAmount(bean.getActivityAmount().subtract(lastBean.getActivityAmount()));
+                        bean.setCouponAmount(bean.getCouponAmount().subtract(lastBean.getCouponAmount()));
+                        out.collect(bean);
                     }
-                    
-                    // b: 把当前的数据放入到流中
-                    out.collect(bean);
-                    // 把这条数据放入到状态中
-                    beanState.update(bean);
                 }
             });
     }
