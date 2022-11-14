@@ -115,8 +115,6 @@ public class Dws_09_DwsTradeSkuOrderWindow_1 extends BaseAppV1 {
                     // a   -> a
                     // b   -> b-a
                     // c   -> c-b
-                    
-                    //
                     TradeSkuOrderBean lastBean = beanState.value();
     
                     if (lastBean == null) {
