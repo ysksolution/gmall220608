@@ -111,7 +111,7 @@ public class Dws_09_DwsTradeSkuOrderWindow_1 extends BaseAppV1 {
                 public void processElement(TradeSkuOrderBean bean,
                                            Context ctx,
                                            Collector<TradeSkuOrderBean> out) throws Exception {
-                    // 数据膨胀:
+                    // 解决数据膨胀:
                     // a   -> a
                     // b   -> b-a
                     // c   -> c-b
