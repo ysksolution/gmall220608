@@ -5,8 +5,11 @@ import com.alibaba.fastjson.JSONObject;
 import com.atguigu.gmall.realtime.app.BaseAppV1;
 import com.atguigu.gmall.realtime.bean.TradeSkuOrderBean;
 import com.atguigu.gmall.realtime.common.Constant;
+import com.atguigu.gmall.realtime.util.AtguiguUtil;
 import org.apache.commons.beanutils.BeanUtils;
+import org.apache.flink.api.common.eventtime.WatermarkStrategy;
 import org.apache.flink.api.common.functions.MapFunction;
+import org.apache.flink.api.common.functions.ReduceFunction;
 import org.apache.flink.api.common.state.ValueState;
 import org.apache.flink.api.common.state.ValueStateDescriptor;
 import org.apache.flink.configuration.Configuration;
@@ -14,9 +17,14 @@ import org.apache.flink.streaming.api.datastream.DataStreamSource;
 import org.apache.flink.streaming.api.datastream.SingleOutputStreamOperator;
 import org.apache.flink.streaming.api.environment.StreamExecutionEnvironment;
 import org.apache.flink.streaming.api.functions.KeyedProcessFunction;
+import org.apache.flink.streaming.api.functions.windowing.ProcessWindowFunction;
+import org.apache.flink.streaming.api.windowing.assigners.TumblingEventTimeWindows;
+import org.apache.flink.streaming.api.windowing.time.Time;
+import org.apache.flink.streaming.api.windowing.windows.TimeWindow;
 import org.apache.flink.util.Collector;
 
 import java.math.BigDecimal;
+import java.time.Duration;
 
 /**
  * @Author lzc
@@ -40,7 +48,50 @@ public class Dws_09_DwsTradeSkuOrderWindow_1 extends BaseAppV1 {
         SingleOutputStreamOperator<TradeSkuOrderBean> beanStream = parseToPojo(stream);
         // 2. 按照 order_detail_id 去重
         SingleOutputStreamOperator<TradeSkuOrderBean> distinctedStream = distinctByOrderDetailId(beanStream);
-        distinctedStream.print();
+        // 3.  开窗聚会
+        windowAndJoin(distinctedStream).print();
+    }
+    
+    private SingleOutputStreamOperator<TradeSkuOrderBean> windowAndJoin(SingleOutputStreamOperator<TradeSkuOrderBean> stream) {
+       return stream
+            .assignTimestampsAndWatermarks(
+                WatermarkStrategy
+                    .<TradeSkuOrderBean>forBoundedOutOfOrderness(Duration.ofSeconds(3))
+                    .withTimestampAssigner((bean, ts) -> bean.getTs())
+            )
+            .keyBy(TradeSkuOrderBean::getSkuId)
+            .window(TumblingEventTimeWindows.of(Time.seconds(5)))
+            .reduce(
+                new ReduceFunction<TradeSkuOrderBean>() {
+                    @Override
+                    public TradeSkuOrderBean reduce(TradeSkuOrderBean value1,
+                                                    TradeSkuOrderBean value2) throws Exception {
+                        value1.setOriginalAmount(value1.getOriginalAmount().add(value2.getOriginalAmount()));
+                        value1.setOrderAmount(value1.getOrderAmount().add(value2.getOrderAmount()));
+                        value1.setActivityAmount(value1.getActivityAmount().add(value2.getActivityAmount()));
+                        value1.setCouponAmount(value1.getCouponAmount().add(value2.getCouponAmount()));
+                        return value1;
+                    }
+                },
+                new ProcessWindowFunction<TradeSkuOrderBean, TradeSkuOrderBean, String, TimeWindow>() {
+                    @Override
+                    public void process(String key,
+                                        Context ctx,
+                                        Iterable<TradeSkuOrderBean> elements,
+                                        Collector<TradeSkuOrderBean> out) throws Exception {
+    
+                        TradeSkuOrderBean bean = elements.iterator().next();
+                        
+                        bean.setStt(AtguiguUtil.tsToDateTime(ctx.window().getStart()));
+                        bean.setEdt(AtguiguUtil.tsToDateTime(ctx.window().getEnd()));
+    
+                        bean.setTs(System.currentTimeMillis());
+    
+                        out.collect(bean);
+    
+                    }
+                }
+            );
     }
     
     private SingleOutputStreamOperator<TradeSkuOrderBean> parseToPojo(DataStreamSource<String> stream) {
