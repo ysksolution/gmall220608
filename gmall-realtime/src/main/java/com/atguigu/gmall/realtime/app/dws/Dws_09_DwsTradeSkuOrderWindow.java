@@ -1,9 +1,21 @@
 package com.atguigu.gmall.realtime.app.dws;
 
+import com.alibaba.fastjson.JSON;
+import com.alibaba.fastjson.JSONObject;
 import com.atguigu.gmall.realtime.app.BaseAppV1;
+import com.atguigu.gmall.realtime.bean.TradeSkuOrderBean;
 import com.atguigu.gmall.realtime.common.Constant;
+import org.apache.flink.api.common.functions.MapFunction;
+import org.apache.flink.api.common.state.ValueState;
+import org.apache.flink.api.common.state.ValueStateDescriptor;
+import org.apache.flink.configuration.Configuration;
 import org.apache.flink.streaming.api.datastream.DataStreamSource;
+import org.apache.flink.streaming.api.datastream.SingleOutputStreamOperator;
 import org.apache.flink.streaming.api.environment.StreamExecutionEnvironment;
+import org.apache.flink.streaming.api.functions.KeyedProcessFunction;
+import org.apache.flink.util.Collector;
+
+import java.math.BigDecimal;
 
 /**
  * @Author lzc
@@ -17,17 +29,39 @@ public class Dws_09_DwsTradeSkuOrderWindow extends BaseAppV1 {
             "Dws_09_DwsTradeSkuOrderWindow",
             Constant.TOPIC_DWD_TRADE_ORDER_DETAIL
         );
-    
+        
     }
     
     @Override
     public void handle(StreamExecutionEnvironment env,
                        DataStreamSource<String> stream) {
-        // 1. 按照 order_detail_id 去重
-        distinctByOrderDetailId(stream);
+        // 1. 封装数据到 pojo 中
+        SingleOutputStreamOperator<TradeSkuOrderBean> beanStream = parseToPojo(stream);
+        // 2. 按照 order_detail_id 去重
+        SingleOutputStreamOperator<TradeSkuOrderBean> distinctedStream = distinctByOrderDetailId(beanStream);
+        distinctedStream.print();
     }
     
-    private void distinctByOrderDetailId(DataStreamSource<String> stream) {
+    private SingleOutputStreamOperator<TradeSkuOrderBean> parseToPojo(DataStreamSource<String> stream) {
+        return stream.map(new MapFunction<String, TradeSkuOrderBean>() {
+            @Override
+            public TradeSkuOrderBean map(String json) throws Exception {
+                
+                JSONObject obj = JSON.parseObject(json);
+                return TradeSkuOrderBean.builder()
+                    .orderDetailId(obj.getString("id"))
+                    .skuId(obj.getString("sku_id"))
+                    .originalAmount(obj.getBigDecimal("split_original_amount"))
+                    .orderAmount(obj.getBigDecimal("split_total_amount"))
+                    .activityAmount(obj.getBigDecimal("split_activity_amount") == null ? new BigDecimal(0) : obj.getBigDecimal("split_activity_amount"))
+                    .couponAmount(obj.getBigDecimal("split_coupon_amount") == null ? new BigDecimal(0) : obj.getBigDecimal("split_coupon_amount"))
+                    .ts(obj.getLong("ts") * 1000)
+                    .build();
+            }
+        });
+    }
+    
+    private SingleOutputStreamOperator<TradeSkuOrderBean> distinctByOrderDetailId(SingleOutputStreamOperator<TradeSkuOrderBean> stream) {
         /*
             order_detail_id  sku_id   分摊总金额   活动表  优惠券
             1                   1       100       null   null
@@ -55,17 +89,47 @@ public class Dws_09_DwsTradeSkuOrderWindow extends BaseAppV1 {
                                               b: 100 有值 null
                                 把这个条数据存入到状态中
                                 
-                    第二条数据来:
+                    第三条数据来:
                             100 有值  null -> a(取出状态中的值): -100 有值 null
                                               b: 100 有值 有值
-                            
-                 
-                 
-                    
-                 
-        
-        
+       
          */
+       return stream
+            .keyBy(TradeSkuOrderBean::getOrderDetailId)
+            .process(new KeyedProcessFunction<String, TradeSkuOrderBean, TradeSkuOrderBean>() {
+                
+                private ValueState<TradeSkuOrderBean> beanState;
+                
+                @Override
+                public void open(Configuration parameters) throws Exception {
+                    beanState = getRuntimeContext()
+                        .getState(new ValueStateDescriptor<TradeSkuOrderBean>("beanState", TradeSkuOrderBean.class));
+                }
+                
+                @Override
+                public void processElement(TradeSkuOrderBean bean,
+                                           Context ctx,
+                                           Collector<TradeSkuOrderBean> out) throws Exception {
+                    
+                    TradeSkuOrderBean lastBean = beanState.value();
+                    if (lastBean != null) {
+                        // 不是第一条数据:
+                        // a: 把状态中的四个指标取反, 然后放入到流中
+                        lastBean.setOriginalAmount(lastBean.getOriginalAmount().negate());
+                        lastBean.setOrderAmount(lastBean.getOrderAmount().negate());
+                        lastBean.setActivityAmount(lastBean.getActivityAmount().negate());
+                        lastBean.setCouponAmount(lastBean.getCouponAmount().negate());
+                        out.collect(lastBean);
+                        
+                        // a  b-a  c-b
+                    }
+                    
+                    // b: 把当前的数据放入到流中
+                    out.collect(bean);
+                    // 把这条数据放入到状态中
+                    beanState.update(bean);
+                }
+            });
     }
 }
 /*
