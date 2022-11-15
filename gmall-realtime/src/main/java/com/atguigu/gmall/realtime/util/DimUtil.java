@@ -25,11 +25,9 @@ public class DimUtil {
                                                    JSONObject.class);
         if (dims.size() == 0) {
             // 表示没有查到相应的维度信息
-            throw new RuntimeException("每有查到对应的维度信息, 请检测你的维度表和 id 的值是否正确: 表名=" + table + ",id=" + id);
+            throw new RuntimeException("没有查到对应的维度信息, 请检测你的维度表名和 id 的值是否正确: 表名=" + table + ",id=" + id);
         }
-    
         return dims.get(0); // 查到的维度信息返回
-        
     }
     
 }
