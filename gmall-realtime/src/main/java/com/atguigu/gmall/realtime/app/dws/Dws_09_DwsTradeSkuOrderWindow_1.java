@@ -6,10 +6,13 @@ import com.atguigu.gmall.realtime.app.BaseAppV1;
 import com.atguigu.gmall.realtime.bean.TradeSkuOrderBean;
 import com.atguigu.gmall.realtime.common.Constant;
 import com.atguigu.gmall.realtime.util.AtguiguUtil;
+import com.atguigu.gmall.realtime.util.DimUtil;
+import com.atguigu.gmall.realtime.util.DruidDSUtil;
 import org.apache.commons.beanutils.BeanUtils;
 import org.apache.flink.api.common.eventtime.WatermarkStrategy;
 import org.apache.flink.api.common.functions.MapFunction;
 import org.apache.flink.api.common.functions.ReduceFunction;
+import org.apache.flink.api.common.functions.RichMapFunction;
 import org.apache.flink.api.common.state.ValueState;
 import org.apache.flink.api.common.state.ValueStateDescriptor;
 import org.apache.flink.configuration.Configuration;
@@ -24,6 +27,7 @@ import org.apache.flink.streaming.api.windowing.windows.TimeWindow;
 import org.apache.flink.util.Collector;
 
 import java.math.BigDecimal;
+import java.sql.Connection;
 import java.time.Duration;
 
 /**
@@ -48,12 +52,80 @@ public class Dws_09_DwsTradeSkuOrderWindow_1 extends BaseAppV1 {
         SingleOutputStreamOperator<TradeSkuOrderBean> beanStream = parseToPojo(stream);
         // 2. 按照 order_detail_id 去重
         SingleOutputStreamOperator<TradeSkuOrderBean> distinctedStream = distinctByOrderDetailId(beanStream);
-        // 3.  开窗聚会
-        windowAndJoin(distinctedStream).print();
+        // 3.  开窗聚合
+        SingleOutputStreamOperator<TradeSkuOrderBean> beanStreamWithoutDim = windowAndJoin(distinctedStream);
+        // 4. 补充维度信息
+        joinDim(beanStreamWithoutDim);
+        
     }
     
-    private SingleOutputStreamOperator<TradeSkuOrderBean> windowAndJoin(SingleOutputStreamOperator<TradeSkuOrderBean> stream) {
-       return stream
+    private void joinDim(SingleOutputStreamOperator<TradeSkuOrderBean> beanStreamWithoutDim) {
+        /*
+        流中的 join: 两个流, 事实表数据
+        
+        
+        现在需要时事实表与维度表进行 join
+            不能使用流与流的 join
+            
+        flink sql: 事实表与维度表 join 用 lookup join
+        
+        流与维度表的 join: 需要自己实现
+            每来一条数据, 根据需要的条件去查询对应的维度信息: 本质执行一个 sql 语句
+        
+         */
+        beanStreamWithoutDim
+            .map(new RichMapFunction<TradeSkuOrderBean, TradeSkuOrderBean>() {
+                
+                private Connection conn;
+                
+                @Override
+                public void open(Configuration parameters) throws Exception {
+                    // 1. 创建到 phoenix 的链接
+                    conn = DruidDSUtil.getPhoenixConn();
+                }
+                
+                @Override
+                public TradeSkuOrderBean map(TradeSkuOrderBean bean) throws Exception {
+                    
+                    // 1.sku_info
+                    JSONObject skuInfo = DimUtil.readDimFromPhoenix(conn, "dim_sku_info", bean.getSkuId());
+                    bean.setSkuName(skuInfo.getString("SKU_NAME"));
+                    
+                    bean.setSpuId(skuInfo.getString("SPU_ID"));
+                    bean.setTrademarkId(skuInfo.getString("TM_ID"));
+                    bean.setCategory3Id(skuInfo.getString("CATEGORY3_ID"));
+                    
+                    // 2. spu_info
+                    JSONObject spuInfo = DimUtil.readDimFromPhoenix(conn, "dim_spu_info", bean.getSpuId());
+                    bean.setSpuName(spuInfo.getString("SPU_NAME"));
+                    
+                    // 3. base_trademark
+                    JSONObject baseTrademark = DimUtil.readDimFromPhoenix(conn, "dim_base_trademark", bean.getTrademarkId());
+                    bean.setTrademarkName(baseTrademark.getString("TM_NAME"));
+                    
+                    // 4. c3
+                    JSONObject c3 = DimUtil.readDimFromPhoenix(conn, "dim_base_category3", bean.getCategory3Id());
+                    bean.setCategory3Name(c3.getString("NAME"));
+                    bean.setCategory2Id(c3.getString("CATEGORY2_ID"));
+                    
+                    // 5. c2
+                    JSONObject c2 = DimUtil.readDimFromPhoenix(conn, "dim_base_category2", bean.getCategory2Id());
+                    bean.setCategory2Name(c2.getString("NAME"));
+                    bean.setCategory1Id(c2.getString("CATEGORY1_ID"));
+                    
+                    // 6. c1
+                    JSONObject c1 = DimUtil.readDimFromPhoenix(conn, "dim_base_category1", bean.getCategory1Id());
+                    bean.setCategory1Name(c1.getString("NAME"));
+                    
+                    return bean;
+                }
+            })
+            .print();
+    }
+    
+    private SingleOutputStreamOperator<TradeSkuOrderBean> windowAndJoin(
+        SingleOutputStreamOperator<TradeSkuOrderBean> stream) {
+        return stream
             .assignTimestampsAndWatermarks(
                 WatermarkStrategy
                     .<TradeSkuOrderBean>forBoundedOutOfOrderness(Duration.ofSeconds(3))
@@ -79,14 +151,14 @@ public class Dws_09_DwsTradeSkuOrderWindow_1 extends BaseAppV1 {
                                         Context ctx,
                                         Iterable<TradeSkuOrderBean> elements,
                                         Collector<TradeSkuOrderBean> out) throws Exception {
-    
+                        
                         TradeSkuOrderBean bean = elements.iterator().next();
                         
                         bean.setStt(AtguiguUtil.tsToDateTime(ctx.window().getStart()));
                         bean.setEdt(AtguiguUtil.tsToDateTime(ctx.window().getEnd()));
-    
+                        
                         bean.setTs(System.currentTimeMillis());
-    
+                        
                         out.collect(bean);
                     }
                 }
@@ -112,7 +184,8 @@ public class Dws_09_DwsTradeSkuOrderWindow_1 extends BaseAppV1 {
         });
     }
     
-    private SingleOutputStreamOperator<TradeSkuOrderBean> distinctByOrderDetailId(SingleOutputStreamOperator<TradeSkuOrderBean> stream) {
+    private SingleOutputStreamOperator<TradeSkuOrderBean> distinctByOrderDetailId(
+        SingleOutputStreamOperator<TradeSkuOrderBean> stream) {
         /*
             order_detail_id  sku_id   分摊总金额   活动表  优惠券
             1                   1       100       null   null
@@ -145,7 +218,7 @@ public class Dws_09_DwsTradeSkuOrderWindow_1 extends BaseAppV1 {
                                               b: 100 有值 有值
        
          */
-       return stream
+        return stream
             .keyBy(TradeSkuOrderBean::getOrderDetailId)
             .process(new KeyedProcessFunction<String, TradeSkuOrderBean, TradeSkuOrderBean>() {
                 
@@ -166,12 +239,12 @@ public class Dws_09_DwsTradeSkuOrderWindow_1 extends BaseAppV1 {
                     // b   -> b-a
                     // c   -> c-b
                     TradeSkuOrderBean lastBean = beanState.value();
-    
+                    
                     if (lastBean == null) {
                         beanState.update(bean);
                         
                         out.collect(bean);
-                    }else{
+                    } else {
                         // 由于对象是可变对象, 所以最好 copy 一个新的对象, 再存入到状态中
                         TradeSkuOrderBean newBean = new TradeSkuOrderBean();
                         BeanUtils.copyProperties(newBean, bean); // 把右边的对象的属性 copy 到左边的对象中
