@@ -8,6 +8,7 @@ import com.atguigu.gmall.realtime.common.Constant;
 import com.atguigu.gmall.realtime.util.AtguiguUtil;
 import com.atguigu.gmall.realtime.util.DimUtil;
 import com.atguigu.gmall.realtime.util.DruidDSUtil;
+import com.atguigu.gmall.realtime.util.RedisUtil;
 import org.apache.commons.beanutils.BeanUtils;
 import org.apache.flink.api.common.eventtime.WatermarkStrategy;
 import org.apache.flink.api.common.functions.MapFunction;
@@ -25,6 +26,7 @@ import org.apache.flink.streaming.api.windowing.assigners.TumblingEventTimeWindo
 import org.apache.flink.streaming.api.windowing.time.Time;
 import org.apache.flink.streaming.api.windowing.windows.TimeWindow;
 import org.apache.flink.util.Collector;
+import redis.clients.jedis.Jedis;
 
 import java.math.BigDecimal;
 import java.sql.Connection;
@@ -75,20 +77,23 @@ public class Dws_09_DwsTradeSkuOrderWindow_1_Cache extends BaseAppV1 {
          */
         beanStreamWithoutDim
             .map(new RichMapFunction<TradeSkuOrderBean, TradeSkuOrderBean>() {
-                
+    
+                private Jedis redisClient;
                 private Connection conn;
                 
                 @Override
                 public void open(Configuration parameters) throws Exception {
                     // 1. 创建到 phoenix 的链接
                     conn = DruidDSUtil.getPhoenixConn();
+    
+                    redisClient = RedisUtil.getRedisClient();
                 }
                 
                 @Override
                 public TradeSkuOrderBean map(TradeSkuOrderBean bean) throws Exception {
                     
                     // 1.sku_info
-                    JSONObject skuInfo = DimUtil.readDimFromPhoenix(conn, "dim_sku_info", bean.getSkuId());
+                    JSONObject skuInfo = DimUtil.readDim(redisClient, conn, "dim_sku_info", bean.getSkuId());
                     bean.setSkuName(skuInfo.getString("SKU_NAME"));
                     
                     bean.setSpuId(skuInfo.getString("SPU_ID"));
@@ -96,25 +101,25 @@ public class Dws_09_DwsTradeSkuOrderWindow_1_Cache extends BaseAppV1 {
                     bean.setCategory3Id(skuInfo.getString("CATEGORY3_ID"));
                     
                     // 2. spu_info
-                    JSONObject spuInfo = DimUtil.readDimFromPhoenix(conn, "dim_spu_info", bean.getSpuId());
+                    JSONObject spuInfo = DimUtil.readDim(redisClient,conn, "dim_spu_info", bean.getSpuId());
                     bean.setSpuName(spuInfo.getString("SPU_NAME"));
                     
                     // 3. base_trademark
-                    JSONObject baseTrademark = DimUtil.readDimFromPhoenix(conn, "dim_base_trademark", bean.getTrademarkId());
+                    JSONObject baseTrademark = DimUtil.readDim(redisClient,conn, "dim_base_trademark", bean.getTrademarkId());
                     bean.setTrademarkName(baseTrademark.getString("TM_NAME"));
                     
                     // 4. c3
-                    JSONObject c3 = DimUtil.readDimFromPhoenix(conn, "dim_base_category3", bean.getCategory3Id());
+                    JSONObject c3 = DimUtil.readDim(redisClient,conn, "dim_base_category3", bean.getCategory3Id());
                     bean.setCategory3Name(c3.getString("NAME"));
                     bean.setCategory2Id(c3.getString("CATEGORY2_ID"));
                     
                     // 5. c2
-                    JSONObject c2 = DimUtil.readDimFromPhoenix(conn, "dim_base_category2", bean.getCategory2Id());
+                    JSONObject c2 = DimUtil.readDim(redisClient,conn, "dim_base_category2", bean.getCategory2Id());
                     bean.setCategory2Name(c2.getString("NAME"));
                     bean.setCategory1Id(c2.getString("CATEGORY1_ID"));
                     
                     // 6. c1
-                    JSONObject c1 = DimUtil.readDimFromPhoenix(conn, "dim_base_category1", bean.getCategory1Id());
+                    JSONObject c1 = DimUtil.readDim(redisClient,conn, "dim_base_category1", bean.getCategory1Id());
                     bean.setCategory1Name(c1.getString("NAME"));
                     
                     return bean;
