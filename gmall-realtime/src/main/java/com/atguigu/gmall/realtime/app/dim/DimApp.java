@@ -169,7 +169,7 @@ public class DimApp extends BaseAppV1 {
                     if (tp != null) {
                         // 把 type 值放入到 data 中, 到后期要用
                         JSONObject data = obj.getJSONObject("data");
-                        data.put("op_type", obj.getString("type"));
+                        data.put("op_type", obj.getString("type"));  // insert 或 update
                         out.collect(Tuple2.of(data, tp));
                         
                     }

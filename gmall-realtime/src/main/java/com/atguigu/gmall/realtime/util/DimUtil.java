@@ -76,7 +76,7 @@ public class DimUtil {
         return dim;
     }
     
-    private static String getRedisKey(String table, String id) {
+    public static String getRedisKey(String table, String id) {
         return table + ":" + id;
     }
     
