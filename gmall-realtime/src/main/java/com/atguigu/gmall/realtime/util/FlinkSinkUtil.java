@@ -90,6 +90,9 @@ public class FlinkSinkUtil {
         // insert into person(id,age, name)values(?,?,?)
         String columns = Arrays
             .stream(tClass.getDeclaredFields())
+            .filter(f -> {
+                return !"orderDetailId".equals(f.getName());
+            }) // 过滤掉在 Clickhouse 的表中不需要的属性
             .map(f -> CaseFormat.LOWER_CAMEL.to(CaseFormat.LOWER_UNDERSCORE, f.getName()))
             .collect(Collectors.joining(","));
         
@@ -126,11 +129,13 @@ public class FlinkSinkUtil {
                           Class<?> tClass = t.getClass();
                           Field[] fields = tClass.getDeclaredFields();
                           try {
-                              for (int i = 0; i < fields.length; i++) {
+                              for (int i = 0, position = 1; i < fields.length; i++) {
                                   Field field = fields[i];
-                                  field.setAccessible(true);
-                                  Object v = field.get(t);
-                                  ps.setObject(i + 1, v);
+                                  if (!"orderDetailId".equals(field.getName())) {
+                                      field.setAccessible(true);
+                                      Object v = field.get(t);
+                                      ps.setObject(position++, v);  // i:[0,19] i+1:[1,20]
+                                  }
                               }
                           } catch (IllegalAccessException e) {
                               throw new RuntimeException(e);

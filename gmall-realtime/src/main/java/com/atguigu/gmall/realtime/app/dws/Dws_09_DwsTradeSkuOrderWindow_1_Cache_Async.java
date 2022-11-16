@@ -7,6 +7,7 @@ import com.atguigu.gmall.realtime.bean.TradeSkuOrderBean;
 import com.atguigu.gmall.realtime.common.Constant;
 import com.atguigu.gmall.realtime.function.DimAsyncFunction;
 import com.atguigu.gmall.realtime.util.AtguiguUtil;
+import com.atguigu.gmall.realtime.util.FlinkSinkUtil;
 import org.apache.commons.beanutils.BeanUtils;
 import org.apache.flink.api.common.eventtime.WatermarkStrategy;
 import org.apache.flink.api.common.functions.MapFunction;
@@ -54,17 +55,164 @@ public class Dws_09_DwsTradeSkuOrderWindow_1_Cache_Async extends BaseAppV1 {
         // 3.  开窗聚合
         SingleOutputStreamOperator<TradeSkuOrderBean> beanStreamWithoutDim = windowAndJoin(distinctedStream);
         // 4. 补充维度信息
-        joinDim(beanStreamWithoutDim);
+        SingleOutputStreamOperator<TradeSkuOrderBean> resultStream = joinDim(beanStreamWithoutDim);
+        // 5. 写出到 clickhouse 中
+        writeToClickhouse(resultStream);
         
     }
     
-    private void joinDim(SingleOutputStreamOperator<TradeSkuOrderBean> stream) {
+    private void writeToClickhouse(SingleOutputStreamOperator<TradeSkuOrderBean> resultStream) {
+        resultStream.addSink(FlinkSinkUtil.getClickHouseSink("dws_trade_sku_order_window", TradeSkuOrderBean.class));
+    }
+    
+    private SingleOutputStreamOperator<TradeSkuOrderBean> joinDim(
+        SingleOutputStreamOperator<TradeSkuOrderBean> stream) {
         SingleOutputStreamOperator<TradeSkuOrderBean> skuInfoStream = AsyncDataStream.unorderedWait(
             stream,
-            new DimAsyncFunction<TradeSkuOrderBean>(),
+            new DimAsyncFunction<TradeSkuOrderBean>() {
+                @Override
+                protected String getTable() {
+                    return "dim_sku_info";
+                }
+                
+                @Override
+                protected String getId(TradeSkuOrderBean input) {
+                    return input.getSkuId();
+                }
+                
+                @Override
+                protected void addDim(TradeSkuOrderBean input,
+                                      JSONObject dim) {
+                    input.setSkuName(dim.getString("SKU_NAME"));
+                    
+                    input.setSpuId(dim.getString("SPU_ID"));
+                    input.setTrademarkId(dim.getString("TM_ID"));
+                    input.setCategory3Id(dim.getString("CATEGORY3_ID"));
+                    
+                }
+            },
             60,
             TimeUnit.SECONDS
         );
+        
+        SingleOutputStreamOperator<TradeSkuOrderBean> spuInfoStream = AsyncDataStream.unorderedWait(
+            skuInfoStream,
+            new DimAsyncFunction<TradeSkuOrderBean>() {
+                @Override
+                protected String getTable() {
+                    return "dim_spu_info";
+                }
+                
+                @Override
+                protected String getId(TradeSkuOrderBean input) {
+                    return input.getSpuId();
+                }
+                
+                @Override
+                protected void addDim(TradeSkuOrderBean input,
+                                      JSONObject dim) {
+                    input.setSpuName(dim.getString("SPU_NAME"));
+                }
+            },
+            60,
+            TimeUnit.SECONDS
+        );
+        
+        
+        SingleOutputStreamOperator<TradeSkuOrderBean> tmStream = AsyncDataStream.unorderedWait(
+            spuInfoStream,
+            new DimAsyncFunction<TradeSkuOrderBean>() {
+                @Override
+                protected String getTable() {
+                    return "dim_base_trademark";
+                }
+                
+                @Override
+                protected String getId(TradeSkuOrderBean input) {
+                    return input.getTrademarkId();
+                }
+                
+                @Override
+                protected void addDim(TradeSkuOrderBean input,
+                                      JSONObject dim) {
+                    input.setTrademarkName(dim.getString("TM_NAME"));
+                }
+            },
+            60,
+            TimeUnit.SECONDS
+        );
+        
+        SingleOutputStreamOperator<TradeSkuOrderBean> c3Stream = AsyncDataStream.unorderedWait(
+            tmStream,
+            new DimAsyncFunction<TradeSkuOrderBean>() {
+                @Override
+                protected String getTable() {
+                    return "dim_base_category3";
+                }
+                
+                @Override
+                protected String getId(TradeSkuOrderBean input) {
+                    return input.getCategory3Id();
+                }
+                
+                @Override
+                protected void addDim(TradeSkuOrderBean input,
+                                      JSONObject dim) {
+                    input.setCategory3Name(dim.getString("NAME"));
+                    input.setCategory2Id(dim.getString("CATEGORY2_ID"));
+                }
+            },
+            60,
+            TimeUnit.SECONDS
+        );
+        
+        SingleOutputStreamOperator<TradeSkuOrderBean> c2Stream = AsyncDataStream.unorderedWait(
+            c3Stream,
+            new DimAsyncFunction<TradeSkuOrderBean>() {
+                @Override
+                protected String getTable() {
+                    return "dim_base_category2";
+                }
+                
+                @Override
+                protected String getId(TradeSkuOrderBean input) {
+                    return input.getCategory2Id();
+                }
+                
+                @Override
+                protected void addDim(TradeSkuOrderBean input,
+                                      JSONObject dim) {
+                    input.setCategory2Name(dim.getString("NAME"));
+                    input.setCategory1Id(dim.getString("CATEGORY1_ID"));
+                }
+            },
+            60,
+            TimeUnit.SECONDS
+        );
+        
+        return AsyncDataStream.unorderedWait(
+            c2Stream,
+            new DimAsyncFunction<TradeSkuOrderBean>() {
+                @Override
+                protected String getTable() {
+                    return "dim_base_category1";
+                }
+                
+                @Override
+                protected String getId(TradeSkuOrderBean input) {
+                    return input.getCategory1Id();
+                }
+                
+                @Override
+                protected void addDim(TradeSkuOrderBean input,
+                                      JSONObject dim) {
+                    input.setCategory1Name(dim.getString("NAME"));
+                }
+            },
+            60,
+            TimeUnit.SECONDS
+        );
+        
     }
     
     private SingleOutputStreamOperator<TradeSkuOrderBean> windowAndJoin(
@@ -205,6 +353,21 @@ public class Dws_09_DwsTradeSkuOrderWindow_1_Cache_Async extends BaseAppV1 {
     }
 }
 /*
+1. 写异步之前, 前面所有代码应该是正常运行
+2. 异步超时: 一般是其他原因导致的超时
+    1. 检测集群是否均正常开启
+        hadoop redis hbase  kafka
+        
+    2. 检查 phoenix 中 6 张维度表是否都在
+    
+    3. 再检测 6 张表是否都有数据
+    
+    4. 去检测 redis 中是否有数据
+    
+    5.找我
+
+
+-------
 读取 redis 和数据库, 都需要经过网络.
     网络的连接时间远远大于从 redis 和数据库查询的数据
 

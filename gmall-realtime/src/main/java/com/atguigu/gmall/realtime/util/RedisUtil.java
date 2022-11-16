@@ -15,7 +15,7 @@ public class RedisUtil {
     
     static {
         GenericObjectPoolConfig config = new JedisPoolConfig();
-        config.setMaxTotal(100);  // 连接池最多提供 100 个连接
+        config.setMaxTotal(300);  // 连接池最多提供 100 个连接
         config.setMaxIdle(10);
         config.setMinIdle(2);
         config.setTestOnCreate(true);
