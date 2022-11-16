@@ -1,5 +1,6 @@
 package com.atguigu.gmall.realtime.bean;
 
+import com.atguigu.gmall.realtime.annotation.NotSink;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
@@ -12,8 +13,9 @@ import java.math.BigDecimal;
 @NoArgsConstructor
 @Builder
 public class TradeSkuOrderBean {
-    String orderDetailId; // 会引入一个 bug
     
+    @NotSink
+    String orderDetailId; // 会引入一个 bug
     // 窗口起始时间
     String stt;
     // 窗口结束时间

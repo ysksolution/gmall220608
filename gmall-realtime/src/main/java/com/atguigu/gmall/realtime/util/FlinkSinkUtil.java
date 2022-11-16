@@ -1,6 +1,7 @@
 package com.atguigu.gmall.realtime.util;
 
 import com.alibaba.fastjson.JSONObject;
+import com.atguigu.gmall.realtime.annotation.NotSink;
 import com.atguigu.gmall.realtime.bean.TableProcess;
 import com.atguigu.gmall.realtime.common.Constant;
 import com.atguigu.gmall.realtime.sink.PhoenixSink;
@@ -91,8 +92,10 @@ public class FlinkSinkUtil {
         String columns = Arrays
             .stream(tClass.getDeclaredFields())
             .filter(f -> {
-                return !"orderDetailId".equals(f.getName());
-            }) // 过滤掉在 Clickhouse 的表中不需要的属性
+                // 过滤掉在 Clickhouse 的表中不需要的属性
+                // 如果这个属性有 NotSink 这个注解, 就不要了
+                return f.getAnnotation(NotSink.class) == null;
+            })
             .map(f -> CaseFormat.LOWER_CAMEL.to(CaseFormat.LOWER_UNDERSCORE, f.getName()))
             .collect(Collectors.joining(","));
         
@@ -131,7 +134,7 @@ public class FlinkSinkUtil {
                           try {
                               for (int i = 0, position = 1; i < fields.length; i++) {
                                   Field field = fields[i];
-                                  if (!"orderDetailId".equals(field.getName())) {
+                                  if (field.getAnnotation(NotSink.class) == null) {
                                       field.setAccessible(true);
                                       Object v = field.get(t);
                                       ps.setObject(position++, v);  // i:[0,19] i+1:[1,20]
