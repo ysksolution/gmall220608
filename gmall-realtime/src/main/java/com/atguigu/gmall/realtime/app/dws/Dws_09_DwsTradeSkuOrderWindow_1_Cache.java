@@ -41,7 +41,7 @@ public class Dws_09_DwsTradeSkuOrderWindow_1_Cache extends BaseAppV1 {
         new Dws_09_DwsTradeSkuOrderWindow_1_Cache().init(
             4009,
             2,
-            "Dws_09_DwsTradeSkuOrderWindow",
+            "Dws_09_DwsTradeSkuOrderWindow_1_Cache",
             Constant.TOPIC_DWD_TRADE_ORDER_DETAIL
         );
         

@@ -39,7 +39,7 @@ public class Dws_09_DwsTradeSkuOrderWindow_1 extends BaseAppV1 {
         new Dws_09_DwsTradeSkuOrderWindow_1().init(
             4009,
             2,
-            "Dws_09_DwsTradeSkuOrderWindow",
+            "Dws_09_DwsTradeSkuOrderWindow_1",
             Constant.TOPIC_DWD_TRADE_ORDER_DETAIL
         );
         
