@@ -5,6 +5,7 @@ import com.alibaba.fastjson.JSONObject;
 import com.atguigu.gmall.realtime.app.BaseAppV1;
 import com.atguigu.gmall.realtime.bean.TradeSkuOrderBean;
 import com.atguigu.gmall.realtime.common.Constant;
+import com.atguigu.gmall.realtime.function.DimAsyncFunction;
 import com.atguigu.gmall.realtime.util.AtguiguUtil;
 import org.apache.commons.beanutils.BeanUtils;
 import org.apache.flink.api.common.eventtime.WatermarkStrategy;
@@ -13,6 +14,7 @@ import org.apache.flink.api.common.functions.ReduceFunction;
 import org.apache.flink.api.common.state.ValueState;
 import org.apache.flink.api.common.state.ValueStateDescriptor;
 import org.apache.flink.configuration.Configuration;
+import org.apache.flink.streaming.api.datastream.AsyncDataStream;
 import org.apache.flink.streaming.api.datastream.DataStreamSource;
 import org.apache.flink.streaming.api.datastream.SingleOutputStreamOperator;
 import org.apache.flink.streaming.api.environment.StreamExecutionEnvironment;
@@ -25,6 +27,7 @@ import org.apache.flink.util.Collector;
 
 import java.math.BigDecimal;
 import java.time.Duration;
+import java.util.concurrent.TimeUnit;
 
 /**
  * @Author lzc
@@ -55,8 +58,13 @@ public class Dws_09_DwsTradeSkuOrderWindow_1_Cache_Async extends BaseAppV1 {
         
     }
     
-    private void joinDim(SingleOutputStreamOperator<TradeSkuOrderBean> beanStreamWithoutDim) {
-    
+    private void joinDim(SingleOutputStreamOperator<TradeSkuOrderBean> stream) {
+        SingleOutputStreamOperator<TradeSkuOrderBean> skuInfoStream = AsyncDataStream.unorderedWait(
+            stream,
+            new DimAsyncFunction<TradeSkuOrderBean>(),
+            60,
+            TimeUnit.SECONDS
+        );
     }
     
     private SingleOutputStreamOperator<TradeSkuOrderBean> windowAndJoin(
@@ -197,7 +205,19 @@ public class Dws_09_DwsTradeSkuOrderWindow_1_Cache_Async extends BaseAppV1 {
     }
 }
 /*
+读取 redis 和数据库, 都需要经过网络.
+    网络的连接时间远远大于从 redis 和数据库查询的数据
 
+以前的算子都是同步的
 
+异步流处理:
 
-*/
+如果要使用异步流处理, 那么外部系统的客户端要支持异步链接
+    redis 和 phoenix 目前没有一部客户端可用
+    
+    使用多线程(线程池)+多客户端
+        每一次连接, 创建一个线程, 在这个线程内创建一个客户端(同步)
+        
+     
+ 
+ */
