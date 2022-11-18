@@ -1,10 +1,12 @@
 package com.atguigu.gmall.gmallsugar.service;
 
+import com.atguigu.gmall.gmallsugar.bean.Spu;
 import com.atguigu.gmall.gmallsugar.mapper.TradeMapper;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
 import java.math.BigDecimal;
+import java.util.List;
 
 /**
  * @Author lzc
@@ -17,6 +19,11 @@ public class TradeServiceImpl implements TradeService{
     @Override
     public BigDecimal gmv(int date) {
         return tradeMapper.gmv(date);
+    }
+    
+    @Override
+    public List<Spu> gmvBySpu(int date) {
+        return tradeMapper.gmvBySpu(date);
     }
     
 }
