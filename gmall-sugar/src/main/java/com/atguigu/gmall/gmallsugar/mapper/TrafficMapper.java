@@ -4,6 +4,7 @@ import com.atguigu.gmall.gmallsugar.bean.Traffic;
 import org.apache.ibatis.annotations.Select;
 
 import java.util.List;
+import java.util.Map;
 
 /**
  * @Author lzc
@@ -19,4 +20,13 @@ public interface TrafficMapper {
         "WHERE toYYYYMMDD(stt) = #{date}\n" +
         "GROUP BY toHour(stt)")
     List<Traffic> traffic(int date);
+    
+    @Select("SELECT\n" +
+        "    keyword,\n" +
+        "    sum(keyword_count) ct \n" +
+        "FROM dws_traffic_keyword_page_view_window\n" +
+        "WHERE toYYYYMMDD(stt) = #{date}\n" +
+        "GROUP BY keyword")
+    List<Map<String, Object>> kw(int date);
+    
 }

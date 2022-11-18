@@ -2,6 +2,7 @@ package com.atguigu.gmall.gmallsugar.controller;
 
 import com.alibaba.fastjson.JSONArray;
 import com.alibaba.fastjson.JSONObject;
+import com.atguigu.gmall.gmallsugar.bean.Province;
 import com.atguigu.gmall.gmallsugar.bean.Spu;
 import com.atguigu.gmall.gmallsugar.bean.Tm;
 import com.atguigu.gmall.gmallsugar.bean.Traffic;
@@ -16,6 +17,7 @@ import java.text.SimpleDateFormat;
 import java.util.Date;
 import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 
 /**
  * @Author lzc
@@ -178,6 +180,84 @@ public class SugarController {
         data.put("series", series);
         
         
+        result.put("data", data);
+        
+        return result.toJSONString();
+    }
+    
+    
+    @RequestMapping("/sugar/trade/province")
+    public String province(Integer date) {
+        // date 是 null, 表示要查询当天
+        if (date == null) {
+            
+            date = Integer.valueOf(new SimpleDateFormat("yyyyMMdd").format(new Date()));
+        }
+        
+        // 从 service 读取数据
+        List<Province> list = tradeService.province(date);
+        
+        
+        JSONObject result = new JSONObject();
+        result.put("status", 0);
+        result.put("msg", "");
+        JSONObject data = new JSONObject();
+        
+        JSONArray mapData = new JSONArray();
+    
+        for (Province province : list) {
+            JSONObject obj = new JSONObject();
+            obj.put("name", province.getProvince_name());
+            obj.put("value", province.getOrder_amount());
+    
+            JSONArray tooltipValues = new JSONArray();
+            tooltipValues.add(province.getOrder_count());
+            obj.put("tooltipValues", tooltipValues);
+    
+            mapData.add(obj);
+        }
+        
+        data.put("mapData", mapData);
+        
+        data.put("valueName", "销售额");
+        
+        JSONArray tooltipNames = new JSONArray();
+        tooltipNames.add("订单数");
+        data.put("tooltipNames", tooltipNames);
+        
+        JSONArray tooltipUnits = new JSONArray();
+        tooltipUnits.add("个");
+        data.put("tooltipUnits", tooltipUnits);
+        
+        
+        result.put("data", data);
+        
+        return result.toJSONString();
+    }
+    
+    
+    @RequestMapping("/sugar/trade/kw")
+    public String kw(Integer date) {
+        // date 是 null, 表示要查询当天
+        if (date == null) {
+            
+            date = Integer.valueOf(new SimpleDateFormat("yyyyMMdd").format(new Date()));
+        }
+        
+        // 从 service 读取数据
+        List<Map<String, Object>> list = trafficService.kw(date);
+    
+    
+        JSONObject result = new JSONObject();
+        result.put("status", 0);
+        result.put("msg", "");
+        JSONArray data = new JSONArray();
+        for (Map<String, Object> map : list) {
+            JSONObject obj = new JSONObject();
+            obj.put("name", map.get("keyword"));
+            obj.put("value", map.get("ct"));
+            data.add(obj);
+        }
         result.put("data", data);
         
         return result.toJSONString();

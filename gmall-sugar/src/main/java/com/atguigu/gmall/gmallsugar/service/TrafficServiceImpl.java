@@ -7,6 +7,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
 import java.util.List;
+import java.util.Map;
 
 @Service
 public class TrafficServiceImpl implements TrafficService{
@@ -16,6 +17,11 @@ public class TrafficServiceImpl implements TrafficService{
     @Override
     public List<Traffic> traffic(int date) {
         return trafficMapper.traffic(date);
+    }
+    
+    @Override
+    public List<Map<String, Object>> kw(int date) {
+        return trafficMapper.kw(date);
     }
     
 }
